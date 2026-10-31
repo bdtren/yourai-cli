@@ -1,0 +1,518 @@
+{
+  "version": 1,
+  "updated": "2026-10-31",
+  "engines": {
+    "llama-server": {
+      "version": "b12015",
+      "release_base": "https://github.com/ggml-org/llama.cpp/releases/download/b12015",
+      "assets": {
+        "macos-aarch64-metal": [
+          {
+            "file": "llama-b12015-bin-macos-arm64.tar.gz",
+            "sha256": "f43344dcede6ec565a0956e25dee199f21566768947092ca468a5671d154620c",
+            "size_mb": 16.5
+          }
+        ],
+        "macos-x86_64-cpu": [
+          {
+            "file": "llama-b12015-bin-macos-x64.tar.gz",
+            "sha256": "c9d9e8e66274d86be8bb2c3cd4e4543f32a1fce40a8c338266bd2018248ee486",
+            "size_mb": 12.2
+          }
+        ],
+        "linux-x86_64-cpu": [
+          {
+            "file": "llama-b12015-bin-ubuntu-x64.tar.gz",
+            "sha256": "25458e07a9eca87791b2c856bf7d1c457dcfda038d6bf2fa2bbb07f11c988ee6",
+            "size_mb": 22.9
+          }
+        ],
+        "linux-x86_64-vulkan": [
+          {
+            "file": "llama-b12015-bin-ubuntu-vulkan-x64.tar.gz",
+            "sha256": "bb4c5600ceac4c97fbf2c65ff7b945a178ecff657e87dbd00ab8ea763bd85e59",
+            "size_mb": 35.7
+          }
+        ],
+        "linux-x86_64-cuda": [
+          {
+            "file": "llama-b12015-bin-ubuntu-cuda-12.8-x64.tar.gz",
+            "sha256": "f1e14bad3854ddd154e5fa6e95200bed0ad51beac2222933ad6dcb776b9202b1",
+            "size_mb": 182.8
+          },
+          {
+            "file": "cudart-llama-b12015-bin-ubuntu-cuda-12.8-x64.tar.gz",
+            "sha256": "d480d4deb067e1cdffee81d56466fbc92e534c1e48475b5ec6dc7f69b4b295cd",
+            "size_mb": 594.4
+          }
+        ],
+        "linux-aarch64-cpu": [
+          {
+            "file": "llama-b12015-bin-ubuntu-arm64.tar.gz",
+            "sha256": "60baf0984eec74722b8c396e6de549a50ebfcd6f22a8778a62df53ccd1447019",
+            "size_mb": 18.6
+          }
+        ],
+        "linux-aarch64-vulkan": [
+          {
+            "file": "llama-b12015-bin-ubuntu-vulkan-arm64.tar.gz",
+            "sha256": "871e73e26f08b3b90519bd75b73067b8efc238bd2112f2d711844496e499d149",
+            "size_mb": 29.0
+          }
+        ],
+        "windows-x86_64-cpu": [
+          {
+            "file": "llama-b12015-bin-win-cpu-x64.zip",
+            "sha256": "f3a0097934526c7c937fbe33b8352ee305aa6605cceef1744427a84686edbc48",
+            "size_mb": 24.6
+          }
+        ],
+        "windows-x86_64-vulkan": [
+          {
+            "file": "llama-b12015-bin-win-vulkan-x64.zip",
+            "sha256": "20129400daa3d8216a1985abf942d993ba732419053540cca1ad6487bfd8ebe6",
+            "size_mb": 37.5
+          }
+        ],
+        "windows-x86_64-cuda": [
+          {
+            "file": "llama-b12015-bin-win-cuda-12.4-x64.zip",
+            "sha256": "153efb71c5c792ac9e6d7b28c4779af7dea218a6a136453d6bd2f21a40eceb65",
+            "size_mb": 279.9
+          },
+          {
+            "file": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+            "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+            "size_mb": 391.4
+          }
+        ],
+        "windows-aarch64-cpu": [
+          {
+            "file": "llama-b12015-bin-win-cpu-arm64.zip",
+            "sha256": "97122e37a66724f0c15345e6e691a7cb110c68c92e6f56a24eb6fd5b665ecf50",
+            "size_mb": 13.1
+          }
+        ]
+      }
+    }
+  },
+  "models": [
+    {
+      "id": "qwen2.5-0.5b",
+      "name": "Qwen2.5 0.5B Instruct",
+      "params_b": 0.5,
+      "repo": "bartowski/Qwen2.5-0.5B-Instruct-GGUF",
+      "revision": "41ba88dbac95fed2528c92514c131d73eb5a174b",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.012,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-0.5B-Instruct-Q3_K_M.gguf",
+          "sha256": "e14591771b0a3070c50ff11ee6055ffbb25f0bf50b6f9474ec4a16ff4ace8df6",
+          "size_gb": 0.36
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+          "sha256": "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653",
+          "size_gb": 0.4
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf",
+          "sha256": "a0a413dcbb4676f21d4c951b98a393324694edb1a20a4f9547d1de8d2919ff3b",
+          "size_gb": 0.42
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-0.5B-Instruct-Q8_0.gguf",
+          "sha256": "25130a98aa782284a7dabea0c23245b2fd371ed47244e79d78b8ec23245fdf96",
+          "size_gb": 0.53
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-1.5b",
+      "name": "Qwen2.5 1.5B Instruct",
+      "params_b": 1.5,
+      "repo": "bartowski/Qwen2.5-1.5B-Instruct-GGUF",
+      "revision": "9eadc66189c7641e1ddd226b8267a9119b2ce2d4",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.029,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-1.5B-Instruct-Q3_K_M.gguf",
+          "sha256": "7437ad04011a14fb890074cc783df4c1d537197942337353a824ff7e6115ef9b",
+          "size_gb": 0.82
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+          "sha256": "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370",
+          "size_gb": 0.99
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-1.5B-Instruct-Q5_K_M.gguf",
+          "sha256": "cf240adc57e126e86102335f6565fb23e523b28d287c75bdb0759f064e8bb572",
+          "size_gb": 1.13
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-1.5B-Instruct-Q8_0.gguf",
+          "sha256": "7185d306cf45956c8c017cd0d3b05ecc6bc18b3ea8eb5c240dce40e87563db7f",
+          "size_gb": 1.65
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-3b",
+      "name": "Qwen2.5 3B Instruct",
+      "params_b": 3,
+      "repo": "bartowski/Qwen2.5-3B-Instruct-GGUF",
+      "revision": "f302c64a2269a69fb27b2f9473b362f5bb8e78d8",
+      "license": "Qwen Research License (non-commercial)",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct/blob/main/LICENSE",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.037,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-3B-Instruct-Q3_K_M.gguf",
+          "sha256": "8eff4e0eb51a8148abdaa9849f14f187e5ac6cd7d795610caf996a287277c59d",
+          "size_gb": 1.59
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+          "sha256": "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94",
+          "size_gb": 1.93
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-3B-Instruct-Q5_K_M.gguf",
+          "sha256": "e4180cbad78d8848bd10839e7fd07edd573c4a5b01148c2b3f7ce2763a2a0938",
+          "size_gb": 2.22
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-3B-Instruct-Q8_0.gguf",
+          "sha256": "12491ec9f03aab7f0b96cdb7742695e6583d17ee129de48332d04b9cf6acd960",
+          "size_gb": 3.29
+        }
+      }
+    },
+    {
+      "id": "llama3.2-3b",
+      "name": "Llama 3.2 3B Instruct",
+      "params_b": 3.2,
+      "repo": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+      "revision": "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
+      "license": "Llama 3.2 Community License",
+      "license_url": "https://www.llama.com/llama3_2/license/",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 131072,
+      "kv_gb_per_1k_ctx": 0.115,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+          "sha256": "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff",
+          "size_gb": 2.02
+        },
+        "Q5_K_M": {
+          "file": "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
+          "sha256": "0b94ccd04d908304cec5246a3d942b64417a423bc5c6d47c73bc557e590b5194",
+          "size_gb": 2.32
+        },
+        "Q8_0": {
+          "file": "Llama-3.2-3B-Instruct-Q8_0.gguf",
+          "sha256": "b5607b5090a8280063fff2d706bb3408ca6542341b06aab39c3eca0a28575921",
+          "size_gb": 3.42
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-7b",
+      "name": "Qwen2.5 7B Instruct",
+      "params_b": 7.6,
+      "repo": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+      "revision": "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.057,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-7B-Instruct-Q3_K_M.gguf",
+          "sha256": "6738a2d4f9b280c55b2a19a7ab27334a75d2cafc6ef82a11a075f4b5613eb736",
+          "size_gb": 3.81
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+          "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+          "size_gb": 4.68
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
+          "sha256": "2e998d7e181c8756c5ffc55231b9ee1cdc9d3acec4245d6e27d32bd8e738c474",
+          "size_gb": 5.44
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-7B-Instruct-Q8_0.gguf",
+          "sha256": "9c6a6e61664446321d9c0dd7ee28a0d03914277609e21bc0e1fce4abe780ce1b",
+          "size_gb": 8.1
+        }
+      }
+    },
+    {
+      "id": "llama3.1-8b",
+      "name": "Llama 3.1 8B Instruct",
+      "params_b": 8,
+      "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+      "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
+      "license": "Llama 3.1 Community License",
+      "license_url": "https://www.llama.com/llama3_1/license/",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 131072,
+      "kv_gb_per_1k_ctx": 0.131,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Meta-Llama-3.1-8B-Instruct-Q3_K_M.gguf",
+          "sha256": "6be122b5c8f2a33974953e58e0ffd2be505661acc6f4caf733e4bca130e89fea",
+          "size_gb": 4.02
+        },
+        "Q4_K_M": {
+          "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+          "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+          "size_gb": 4.92
+        },
+        "Q5_K_M": {
+          "file": "Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf",
+          "sha256": "14e10feba0c82a55da198dcd69d137206ad22d116a809926d27fa5f2398c69c7",
+          "size_gb": 5.73
+        },
+        "Q8_0": {
+          "file": "Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
+          "sha256": "9da71c45c90a821809821244d4971e5e5dfad7eb091f0b8ff0546392393b6283",
+          "size_gb": 8.54
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-14b",
+      "name": "Qwen2.5 14B Instruct",
+      "params_b": 14.7,
+      "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
+      "revision": "05244aa5d871c661c80082a15d3bce44714d068d",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.197,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-14B-Instruct-Q3_K_M.gguf",
+          "sha256": "2f68ac3ba018f7de7641229f19adafde5e59d02bbf5651fdbcc510bb9f3facca",
+          "size_gb": 7.34
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+          "sha256": "e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008",
+          "size_gb": 8.99
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-14B-Instruct-Q5_K_M.gguf",
+          "sha256": "48ad2dafedac636f62847f5338c356cd21f5cfa6b1e2c885360cb10c890b8cb2",
+          "size_gb": 10.51
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-14B-Instruct-Q8_0.gguf",
+          "sha256": "23ca481b8226b2492ba8f3eb7af41e0f99d8605c16fb6dec7bc5cf6716b673cf",
+          "size_gb": 15.7
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-32b",
+      "name": "Qwen2.5 32B Instruct",
+      "params_b": 32.5,
+      "repo": "bartowski/Qwen2.5-32B-Instruct-GGUF",
+      "revision": "2116cbb385b8ce3a4d28cf3bf1cd2039a55821a6",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.262,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-32B-Instruct-Q3_K_M.gguf",
+          "sha256": "c87acbeeba9fca2c92952fc94fb1691b07a0dc6b43cacf61e7f798f31414dd54",
+          "size_gb": 15.94
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-32B-Instruct-Q4_K_M.gguf",
+          "sha256": "2e5f6daea180dbc59f65a40641e94d3973b5dbaa32b3c0acf54647fa874e519e",
+          "size_gb": 19.85
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-32B-Instruct-Q5_K_M.gguf",
+          "sha256": "371c9d50b4c2db96c7b6695b81a23c03c10a0ee780a8c3fe9193aac148febdaf",
+          "size_gb": 23.26
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-32B-Instruct-Q8_0.gguf",
+          "sha256": "fc5103335689b33d576ebe8bf50b35a5e04ca6f7cf0753c2f2df1079dabbb78f",
+          "size_gb": 34.82
+        }
+      }
+    },
+    {
+      "id": "llama3.3-70b",
+      "name": "Llama 3.3 70B Instruct",
+      "params_b": 70.6,
+      "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
+      "revision": "b6c5c9f176f3279204034e1d16d393105e95cb88",
+      "license": "Llama 3.3 Community License",
+      "license_url": "https://www.llama.com/llama3_3/license/",
+      "tags": [
+        "chat"
+      ],
+      "context_max": 131072,
+      "kv_gb_per_1k_ctx": 0.328,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Llama-3.3-70B-Instruct-Q3_K_M.gguf",
+          "sha256": "50221eecf9fd26481a55804e74581123f3a175cc589d044bee3306bc53f137c1",
+          "size_gb": 34.27
+        },
+        "Q4_K_M": {
+          "file": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+          "sha256": "32df3baccb556f9840059b2528b2dee4d3d516b24afdfb9d0c56ff5f63e3a664",
+          "size_gb": 42.52
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-coder-1.5b",
+      "name": "Qwen2.5 Coder 1.5B Instruct",
+      "params_b": 1.5,
+      "repo": "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+      "revision": "1af47f78b1f9b0c242fabe43f7a365d5a67f3207",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "code"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.029,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-Coder-1.5B-Instruct-Q3_K_M.gguf",
+          "sha256": "0136801c84c9bb39f2e028a069f6b02a0a284073363550cea1a2ae5f2900c4d3",
+          "size_gb": 0.82
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
+          "sha256": "f530705d447660a4336c329981af164b471b60b974b1d808d57e8ec9fe23b239",
+          "size_gb": 0.99
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-Coder-1.5B-Instruct-Q5_K_M.gguf",
+          "sha256": "92440df3785a3caadbe744ee7d2cb1cb86dfe1c81140c8856739e1bd3561c8a9",
+          "size_gb": 1.13
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
+          "sha256": "717ed8f7110e9ffc8a0e1a607ec131aa9ee3a8d69d5a6e11b5e15ed7b0f6af4c",
+          "size_gb": 1.65
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-coder-7b",
+      "name": "Qwen2.5 Coder 7B Instruct",
+      "params_b": 7.6,
+      "repo": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "revision": "1f629da0c8bed16b9e50cee91c70693650e66c35",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "code"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.057,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-Coder-7B-Instruct-Q3_K_M.gguf",
+          "sha256": "be81e2dafa06d02825dd3a20142c14af0e89087de1b7ce15fbc56f0d8dc8f6b6",
+          "size_gb": 3.81
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+          "sha256": "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
+          "size_gb": 4.68
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-Coder-7B-Instruct-Q5_K_M.gguf",
+          "sha256": "98266f7c5ada4873f0a4d117e9fd61f374d1b136542a0f613cb63e4535607a89",
+          "size_gb": 5.44
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-Coder-7B-Instruct-Q8_0.gguf",
+          "sha256": "ddabea51a3751a6412f06a8beaf9818a3e3e6931596337458407726220097071",
+          "size_gb": 8.1
+        }
+      }
+    },
+    {
+      "id": "qwen2.5-coder-14b",
+      "name": "Qwen2.5 Coder 14B Instruct",
+      "params_b": 14.7,
+      "repo": "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
+      "revision": "5b379ec4bf71bafecb5f9081ad28b19939128988",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "code"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.197,
+      "quants": {
+        "Q3_K_M": {
+          "file": "Qwen2.5-Coder-14B-Instruct-Q3_K_M.gguf",
+          "sha256": "2eda43d86ba2670e73b2d3b1d819054124d4f266270a8242a7cd12c409903004",
+          "size_gb": 7.34
+        },
+        "Q4_K_M": {
+          "file": "Qwen2.5-Coder-14B-Instruct-Q4_K_M.gguf",
+          "sha256": "2946d28c9e1bb2bcae6d42e8678863a31775df6f740315c7d7e6d6b6411f5937",
+          "size_gb": 8.99
+        },
+        "Q5_K_M": {
+          "file": "Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf",
+          "sha256": "68701e9ffaab69e42827524f604bf71b375b7ed8f0c59f6a8c3d646c963b3e2c",
+          "size_gb": 10.51
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-Coder-14B-Instruct-Q8_0.gguf",
+          "sha256": "ceed8d9126648af71bb5b3d1e69c43b25689752ea2c42204a48fea202605adc5",
+          "size_gb": 15.7
+        }
+      }
+    }
+  ]
+}

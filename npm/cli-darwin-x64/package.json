@@ -1,0 +1,15 @@
+{
+  "name": "@yourai/cli-darwin-x64",
+  "version": "0.0.1",
+  "description": "The yourai binary for darwin-x64 (installed automatically by the yourai package)",
+  "homepage": "https://yourai.bdtren.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bdtren/yourai-cli.git"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin"],
+  "preferUnplugged": true,
+  "license": "MIT"
+}

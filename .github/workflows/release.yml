@@ -1,0 +1,140 @@
+name: release
+
+# Runs when you push a tag like v0.1.0. Builds 6 targets, creates the GitHub Release,
+# then (only if enabled with repository variables, and only for stable tags without a "-")
+# publishes to the website, npm, and Homebrew.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,         target: aarch64-apple-darwin }
+          - { os: macos-14,         target: x86_64-apple-darwin }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: windows-latest,   target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm,   target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: version matches tag
+        shell: bash
+        run: |
+          v="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "Cargo.toml version v$v != tag ${GITHUB_REF_NAME}"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          exe=target/${{ matrix.target }}/release/yourai
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          "$exe" --version
+      - name: package
+        shell: bash
+        run: scripts/package.sh "${GITHUB_REF_NAME}" "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: list
+        run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  publish-web:
+    needs: github-release
+    if: vars.PUBLISH_WEB == 'true' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: ssh key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: upload to yourai.bdtren.com/cli
+        env:
+          REMOTE: ${{ vars.DEPLOY_REMOTE }}
+          SSH_OPTS: -i ~/.ssh/deploy_key
+        run: scripts/publish_web.sh "${GITHUB_REF_NAME}" dist
+
+  publish-npm:
+    needs: github-release
+    if: vars.PUBLISH_NPM == 'true' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - run: scripts/npm_publish.sh "${GITHUB_REF_NAME}" dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # The cask downloads from yourai.bdtren.com/cli/releases, so it waits for publish-web
+  # (and is skipped when publish-web is skipped).
+  publish-brew:
+    needs: publish-web
+    if: vars.PUBLISH_BREW == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.HOMEBREW_TAP_REPO || 'bdtren/homebrew-yourai' }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: update cask
+        run: |
+          scripts/update_cask.sh "${GITHUB_REF_NAME}" dist tap/Casks/yourai.rb
+          cd tap
+          git config user.name "yourai-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add Casks/yourai.rb
+          git commit -m "yourai ${GITHUB_REF_NAME}"
+          git push

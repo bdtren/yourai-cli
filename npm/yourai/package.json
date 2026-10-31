@@ -1,0 +1,35 @@
+{
+  "name": "yourai",
+  "version": "0.0.1",
+  "description": "Build and run your own local AI",
+  "homepage": "https://yourai.bdtren.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bdtren/yourai-cli.git"
+  },
+  "bin": {
+    "yourai": "bin/yourai.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "local",
+    "llama.cpp",
+    "cli"
+  ],
+  "optionalDependencies": {
+    "@yourai/cli-darwin-arm64": "0.0.1",
+    "@yourai/cli-darwin-x64": "0.0.1",
+    "@yourai/cli-linux-x64": "0.0.1",
+    "@yourai/cli-linux-arm64": "0.0.1",
+    "@yourai/cli-win32-x64": "0.0.1",
+    "@yourai/cli-win32-arm64": "0.0.1"
+  },
+  "license": "MIT"
+}
