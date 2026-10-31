@@ -2,13 +2,13 @@
 # Uploads a release to https://yourai.bdtren.com/cli/ (served by Caddy from /opt/yourai_server/shared/cli).
 # Usage: scripts/publish_web.sh v0.0.1 dist/
 # latest.txt is written LAST so users never see a version whose files are not uploaded yet.
-# Environment: REMOTE (default root@159.65.8.162), REMOTE_DIR (default /opt/yourai_server/shared/cli),
+# Environment: REMOTE (default clideploy@159.65.8.162), REMOTE_DIR (default /opt/yourai_server/shared/cli),
 #              SSH_OPTS (extra ssh options, e.g. "-i ~/.ssh/deploy_key").
 set -euo pipefail
 
 version="${1:?version like v0.0.1}"
 dist="${2:?folder with the release archives and .sha256 files}"
-REMOTE="${REMOTE:-root@159.65.8.162}"
+REMOTE="${REMOTE:-clideploy@159.65.8.162}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/yourai_server/shared/cli}"
 SSH_OPTS="${SSH_OPTS:-}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
