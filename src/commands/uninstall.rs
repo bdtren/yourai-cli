@@ -56,7 +56,7 @@ pub fn run() -> anyhow::Result<()> {
     let exe = current_exe();
     match detect_method(&exe) {
         Method::Homebrew => {
-            ui::info("installed with Homebrew. Remove it with:\n  brew uninstall --cask yourai\n(add --zap to also delete ~/.yourai)");
+            ui::info("installed with Homebrew. Remove it with:\n  brew uninstall yourai");
             return Ok(());
         }
         Method::Npm => {

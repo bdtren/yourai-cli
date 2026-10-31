@@ -27,7 +27,7 @@ irm https://yourai.bdtren.com/cli/install.ps1 | iex
 Homebrew or npm:
 
 ```sh
-brew install --cask bdtren/yourai/yourai
+brew install bdtren/yourai/yourai
 npm install -g @yourai/cli
 ```
 
@@ -148,7 +148,7 @@ cargo clippy --all-targets -- -D warnings
   into the binary and also published at `https://yourai.bdtren.com/cli/catalog.json`, so the
   model list can be updated without a new CLI release.
 - `scripts/` has the installers and the release helpers (`package.sh`, `publish_web.sh`,
-  `npm_publish.sh`, `update_cask.sh`).
+  `npm_publish.sh`, `update_formula.sh`).
 
 ## License
 

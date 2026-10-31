@@ -121,7 +121,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # The cask downloads from yourai.bdtren.com/cli/releases, so it waits for publish-web
+  # The formula downloads from yourai.bdtren.com/cli/releases, so it waits for publish-web
   # (and is skipped when publish-web is skipped).
   publish-brew:
     needs: publish-web
@@ -139,12 +139,14 @@ jobs:
           repository: ${{ vars.HOMEBREW_TAP_REPO || 'bdtren/homebrew-yourai' }}
           ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           path: tap
-      - name: update cask
+      - name: update formula
         run: |
-          scripts/update_cask.sh "${GITHUB_REF_NAME}" dist tap/Casks/yourai.rb
+          scripts/update_formula.sh "${GITHUB_REF_NAME}" dist tap/Formula/yourai.rb
           cd tap
           git config user.name "yourai-release-bot"
           git config user.email "release-bot@users.noreply.github.com"
-          git add Casks/yourai.rb
+          git rm -q --ignore-unmatch Casks/yourai.rb Casks/.gitkeep || true
+          rmdir Casks 2>/dev/null || true
+          git add Formula/yourai.rb
           git commit -m "yourai ${GITHUB_REF_NAME}"
           git push

@@ -155,7 +155,7 @@ pub fn run(check: bool) -> anyhow::Result<()> {
     if !check {
         match method {
             Method::Homebrew => {
-                ui::info("installed with Homebrew, so update with:\n  brew upgrade --cask yourai");
+                ui::info("installed with Homebrew, so update with:\n  brew upgrade yourai");
                 return Ok(());
             }
             Method::Npm => {
@@ -294,6 +294,10 @@ mod tests {
     fn methods() {
         assert_eq!(
             detect_method(Path::new("/opt/homebrew/Caskroom/yourai/0.1.0/yourai")),
+            Method::Homebrew
+        );
+        assert_eq!(
+            detect_method(Path::new("/opt/homebrew/Cellar/yourai/0.0.1/bin/yourai")),
             Method::Homebrew
         );
         assert_eq!(

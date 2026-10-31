@@ -1,23 +1,39 @@
-cask "yourai" do
-  arch arm: "aarch64", intel: "x86_64"
-
-  version "__VERSION__"
-  sha256 arm:   "__SHA256_ARM__",
-         intel: "__SHA256_INTEL__"
-
-  url "https://yourai.bdtren.com/cli/releases/v#{version}/yourai-v#{version}-#{arch}-apple-darwin.tar.gz"
-  name "YourAI"
+class Yourai < Formula
   desc "Build and run your own local AI"
   homepage "https://yourai.bdtren.com"
+  license "MIT"
 
   livecheck do
-    url "https://yourai.bdtren.com/cli/latest.txt"
-    regex(/v?(\d+(?:\.\d+)+)/i)
+    skip "Platform-specific URLs; check https://yourai.bdtren.com/cli/latest.txt"
   end
 
-  depends_on macos: ">= :big_sur"
+  on_macos do
+    on_arm do
+      url "https://yourai.bdtren.com/cli/releases/v__VERSION__/yourai-v__VERSION__-aarch64-apple-darwin.tar.gz"
+      sha256 "__SHA_MAC_ARM__"
+    end
+    on_intel do
+      url "https://yourai.bdtren.com/cli/releases/v__VERSION__/yourai-v__VERSION__-x86_64-apple-darwin.tar.gz"
+      sha256 "__SHA_MAC_INTEL__"
+    end
+  end
 
-  binary "yourai"
+  on_linux do
+    on_arm do
+      url "https://yourai.bdtren.com/cli/releases/v__VERSION__/yourai-v__VERSION__-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "__SHA_LINUX_ARM__"
+    end
+    on_intel do
+      url "https://yourai.bdtren.com/cli/releases/v__VERSION__/yourai-v__VERSION__-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "__SHA_LINUX_INTEL__"
+    end
+  end
 
-  zap trash: "~/.yourai"
+  def install
+    bin.install "yourai"
+  end
+
+  test do
+    assert_match "__VERSION__", shell_output("#{bin}/yourai --version")
+  end
 end
