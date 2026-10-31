@@ -17,7 +17,8 @@ case "$version" in v[0-9]*) ;; *) echo "version must look like v0.0.1" >&2; exit
 count="$(find "$dist" -maxdepth 1 -name "yourai-${version}-*" | wc -l | tr -d ' ')"
 [ "$count" -ge 12 ] || { echo "expected 6 archives + 6 .sha256 files in $dist, found $count" >&2; exit 2; }
 
-# shellcheck disable=SC2086
+# Commands are built locally on purpose (SC2029).
+# shellcheck disable=SC2086,SC2029
 ssh_cmd() { ssh $SSH_OPTS "$REMOTE" "$@"; }
 # shellcheck disable=SC2086
 rsync_to() { rsync -av --chmod=D755,F644 -e "ssh $SSH_OPTS" "$@"; }

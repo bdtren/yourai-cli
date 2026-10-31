@@ -80,8 +80,13 @@ pub fn which(name: &str) -> Option<PathBuf> {
 
 /// Rejects relative paths that escape `root` (for config values that point at project files).
 pub fn inside(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
+    use std::path::Component;
     let p = Path::new(rel);
-    if p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    // On Windows `/etc/x` is not "absolute" (no drive) but join() still replaces the root.
+    if p.is_absolute()
+        || p.components()
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
+    {
         anyhow::bail!("path `{rel}` must be relative and stay inside the project folder");
     }
     Ok(root.join(p))
@@ -97,5 +102,11 @@ mod tests {
         assert!(inside(root, "prompts/system.md").is_ok());
         assert!(inside(root, "../x").is_err());
         assert!(inside(root, "/etc/passwd").is_err());
+        assert!(inside(root, "a/../../x").is_err());
+        if cfg!(windows) {
+            assert!(inside(root, r"\Windows\x").is_err());
+            assert!(inside(root, r"C:\x").is_err());
+            assert!(inside(root, "C:x").is_err());
+        }
     }
 }
