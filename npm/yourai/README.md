@@ -3,7 +3,7 @@
 Build and run your own local AI from the terminal.
 
 ```bash
-npm install -g yourai
+npm install -g @yourai/cli
 yourai doctor      # check this computer
 yourai init        # guided setup
 cd my-ai && yourai build && yourai start

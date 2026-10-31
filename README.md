@@ -28,7 +28,7 @@ Homebrew or npm:
 
 ```sh
 brew install --cask bdtren/yourai/yourai
-npm install -g yourai
+npm install -g @yourai/cli
 ```
 
 The script installers put the binary in `~/.yourai/bin` (no `sudo`) and add it to your

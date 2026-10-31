@@ -48,5 +48,5 @@ done
 main="$work/yourai"
 cp -R "$root/npm/yourai" "$main"
 set_version "$main/package.json" "$plain"
-echo "==> yourai@$plain"
+echo "==> @yourai/cli@$plain"
 publish "$main"

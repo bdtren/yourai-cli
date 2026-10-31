@@ -1,5 +1,5 @@
 {
-  "name": "yourai",
+  "name": "@yourai/cli",
   "version": "0.0.1",
   "description": "Build and run your own local AI",
   "homepage": "https://yourai.bdtren.com",

@@ -159,7 +159,7 @@ pub fn run(check: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
             Method::Npm => {
-                ui::info("installed with npm, so update with:\n  npm update -g yourai");
+                ui::info("installed with npm, so update with:\n  npm update -g @yourai/cli");
                 return Ok(());
             }
             _ => {}
