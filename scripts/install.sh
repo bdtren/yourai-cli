@@ -34,6 +34,23 @@ add_to_path() {
   say "added $dir to PATH in $profile"
 }
 
+# A piped installer cannot change the PATH of the shell that ran it, so also link the
+# binary into a writable folder that is already on PATH. Prints the link path on success.
+link_on_path() {
+  local bin="$1" dir
+  for dir in "$HOME/.local/bin" "$HOME/bin" /opt/homebrew/bin /usr/local/bin; do
+    case ":$PATH:" in *":$dir:"*) ;; *) continue ;; esac
+    [ -d "$dir" ] && [ -w "$dir" ] || continue
+    if [ -e "$dir/yourai" ] || [ -L "$dir/yourai" ]; then
+      [ "$(readlink "$dir/yourai")" = "$bin" ] || continue
+    fi
+    ln -sf "$bin" "$dir/yourai" 2>/dev/null || continue
+    printf '%s' "$dir/yourai"
+    return 0
+  done
+  return 1
+}
+
 main() {
   local base_url="${YOURAI_BASE_URL:-https://yourai.bdtren.com/cli}"
   local install_dir="${YOURAI_INSTALL_DIR:-$HOME/.yourai/bin}"
@@ -84,7 +101,7 @@ main() {
     say "  download: $url"
     say "  verify:   $url.sha256 (and the GitHub release copy when reachable)"
     say "  install:  $install_dir/yourai"
-    [ "$modify_path" = 1 ] && say "  PATH:     add $install_dir to your shell profile if missing"
+    [ "$modify_path" = 1 ] && say "  PATH:     add $install_dir to your shell profile if missing, and link yourai into a writable folder already on PATH"
     return 0
   fi
 
@@ -116,17 +133,23 @@ main() {
   install -m 0755 "$tmp/yourai" "$install_dir/yourai.new"
   mv -f "$install_dir/yourai.new" "$install_dir/yourai"
 
-  printf '{"method":"script","version":"%s","install_dir":"%s"}\n' "$version" "$install_dir" \
-    > "$HOME/.yourai/install-receipt.json"
-
-  local on_path=0
+  local on_path=0 link=""
   case ":$PATH:" in *":$install_dir:"*) on_path=1 ;; esac
   if [ "$modify_path" = 1 ] && [ "$on_path" = 0 ]; then
     add_to_path "$install_dir"
+    link="$(link_on_path "$install_dir/yourai" || true)"
   fi
+
+  local link_json=""
+  [ -n "$link" ] && link_json=",\"link\":\"$link\""
+  printf '{"method":"script","version":"%s","install_dir":"%s"%s}\n' "$version" "$install_dir" "$link_json" \
+    > "$HOME/.yourai/install-receipt.json"
 
   say "installed to $install_dir/yourai"
   if [ "$on_path" = 1 ]; then
+    say "next: run  yourai doctor  then  yourai init"
+  elif [ -n "$link" ]; then
+    say "linked $link, so you can run yourai now"
     say "next: run  yourai doctor  then  yourai init"
   elif [ "$modify_path" = 1 ]; then
     printf '\n'

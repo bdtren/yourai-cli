@@ -1,6 +1,6 @@
 [package]
 name = "yourai-cli"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "Build and run your own local AI"
 license = "Apache-2.0"

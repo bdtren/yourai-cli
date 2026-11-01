@@ -242,11 +242,14 @@ fn install_script(exe: &Path, version: &str) -> anyhow::Result<()> {
         );
     }
     replace_binary(exe, &new_bin)?;
-    let receipt = serde_json::json!({
-        "method": "script",
-        "version": version,
-        "install_dir": exe.parent().map(|d| d.display().to_string()).unwrap_or_default(),
-    });
+    let mut receipt: serde_json::Value = std::fs::read_to_string(paths::receipt())
+        .ok()
+        .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    receipt["method"] = "script".into();
+    receipt["version"] = version.into();
+    receipt["install_dir"] = exe.parent().map(|d| d.display().to_string()).unwrap_or_default().into();
     let _ = std::fs::write(paths::receipt(), format!("{receipt}\n"));
     let _ = std::fs::remove_dir_all(&tmp);
     ui::ok(format!("updated to yourai {version}"));

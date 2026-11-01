@@ -2,6 +2,8 @@
 # Publishes the npm packages for a release: the six platform packages first, then `yourai`.
 # Usage: scripts/npm_publish.sh v0.0.1 dist/ [--dry-run]
 # Needs: node, npm, tar, unzip, and `npm login` (or NODE_AUTH_TOKEN in CI).
+# Set NPM_OTP=123456 when publishing by hand with a 2FA account.
+# Versions already on npm are skipped, so a failed run can be re-run.
 set -euo pipefail
 
 version="${1:?version like v0.0.1}"
@@ -13,7 +15,16 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 publish() {
-  if [ "$dry" = "--dry-run" ]; then npm publish --access public --dry-run "$1"; else npm publish --access public "$1"; fi
+  local name
+  name="$(node -p 'require(process.argv[1]).name' "$1/package.json")"
+  if npm view "$name@$plain" version >/dev/null 2>&1; then
+    echo "skip $name@$plain (already published)"
+    return 0
+  fi
+  local args=(--access public)
+  [ "$dry" = "--dry-run" ] && args+=(--dry-run)
+  [ -n "${NPM_OTP:-}" ] && args+=(--otp="$NPM_OTP")
+  npm publish "${args[@]}" "$1"
 }
 
 set_version() {

@@ -34,16 +34,25 @@ Windows (PowerShell):
 irm https://yourai.bdtren.com/cli/install.ps1 | iex
 ```
 
-Homebrew or npm:
+Homebrew (Homebrew 7 and later asks you to trust third-party taps once):
 
 ```sh
-brew install bdtren/yourai/yourai
+brew tap bdtren/yourai
+brew trust --tap bdtren/yourai
+brew install yourai
+```
+
+npm:
+
+```sh
 npm install -g @yourai/cli
 ```
 
 The script installers put the binary in `~/.yourai/bin` (no `sudo`) and add it to your
-`PATH`. They verify the download's SHA-256 against both the website and the GitHub
-release before installing.
+`PATH`. On macOS and Linux, `install.sh` also links `yourai` into a writable folder that
+is already on your `PATH` (such as `~/.local/bin` or `/opt/homebrew/bin`), so it works in
+the same terminal right away; `yourai uninstall` removes that link. They verify the
+download's SHA-256 against both the website and the GitHub release before installing.
 
 Installer options: `--version v0.0.1`, `--no-modify-path`, `--dry-run`
 (for example `curl -fsSL .../install.sh | bash -s -- --dry-run`). On Windows use the
@@ -205,7 +214,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.2`).
+Checklist of product features. Checked items ship in this version (`0.0.3`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`

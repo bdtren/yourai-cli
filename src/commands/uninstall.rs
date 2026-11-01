@@ -30,6 +30,16 @@ fn shell_profiles() -> Vec<PathBuf> {
         .collect()
 }
 
+/// The extra symlink install.sh puts in a folder already on PATH, if it still points at `exe`.
+fn installer_link(exe: &Path) -> Option<PathBuf> {
+    let receipt: serde_json::Value = std::fs::read_to_string(paths::receipt())
+        .ok()
+        .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())?;
+    let link = PathBuf::from(receipt["link"].as_str()?);
+    let is_link = std::fs::symlink_metadata(&link).is_ok_and(|m| m.file_type().is_symlink());
+    (is_link && std::fs::canonicalize(&link).ok()? == exe).then_some(link)
+}
+
 /// Removes the two lines the installer added (marker + export).
 fn strip_profile(p: &Path) -> anyhow::Result<()> {
     let text = std::fs::read_to_string(p)?;
@@ -82,6 +92,10 @@ pub fn run() -> anyhow::Result<()> {
 
     ui::heading("This will remove");
     ui::info(format!("the yourai CLI: {}", exe.display()));
+    let link = installer_link(&exe);
+    if let Some(l) = &link {
+        ui::info(format!("the link {}", l.display()));
+    }
     let profiles = shell_profiles();
     for p in &profiles {
         ui::info(format!("the PATH line added to {}", p.display()));
@@ -110,6 +124,9 @@ pub fn run() -> anyhow::Result<()> {
 
     for p in &profiles {
         strip_profile(p)?;
+    }
+    if let Some(l) = &link {
+        let _ = std::fs::remove_file(l);
     }
     #[cfg(windows)]
     {
