@@ -25,6 +25,7 @@ use super::config::Config;
 use super::engine::{self, Bind};
 use super::lock::{Lock, ModelLock};
 use super::project::Project;
+use super::store;
 use super::{paths, process, secrets};
 
 /// One engine process the gateway manages.
@@ -156,6 +157,18 @@ async fn auth(State(gw): State<Shared>, req: Request, next: axum::middleware::Ne
 }
 
 impl Gw {
+    fn resolve(&self, stored: &str) -> Result<PathBuf, ApiError> {
+        store::resolve_lock_path(&self.root, stored)
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    }
+
+    fn resolved_files(&self, m: &ModelLock) -> Result<std::collections::BTreeMap<String, String>, ApiError> {
+        m.files
+            .iter()
+            .map(|(k, v)| Ok((k.clone(), self.resolve(v)?.display().to_string())))
+            .collect()
+    }
+
     fn model(&self, slot: Slot) -> Result<&ModelLock, ApiError> {
         let key = match slot {
             Slot::Image => "image",
@@ -172,29 +185,38 @@ impl Gw {
     }
 
     fn engine_exe(&self, name: &str) -> Result<PathBuf, ApiError> {
-        self.lock
-            .engines
-            .get(name)
-            .map(|e| PathBuf::from(&e.exe))
-            .filter(|p| p.is_file())
-            .ok_or_else(|| {
-                ApiError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("{name} is not installed: run `yourai rebuild`"),
-                )
-            })
+        let Some(e) = self.lock.engines.get(name) else {
+            return Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("{name} is not installed: run `yourai rebuild`"),
+            ));
+        };
+        let p = self.resolve(&e.exe)?;
+        if p.is_file() {
+            Ok(p)
+        } else {
+            Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("{name} is not installed: run `yourai rebuild`"),
+            ))
+        }
     }
 
     fn command(&self, slot: Slot, port: u16) -> Result<(PathBuf, Vec<String>), ApiError> {
         let threads = self.cfg.runtime.threads;
         Ok(match slot {
             Slot::Chat => {
-                let mmproj = (!self.lock.mmproj_path.is_empty()).then(|| PathBuf::from(&self.lock.mmproj_path));
+                let mmproj = if self.lock.mmproj_path.is_empty() {
+                    None
+                } else {
+                    Some(self.resolve(&self.lock.mmproj_path)?)
+                };
+                let model = self.resolve(&self.lock.model_path)?;
                 (
-                    PathBuf::from(&self.lock.engine_exe),
+                    self.resolve(&self.lock.engine_exe)?,
                     engine::llama_args(
                         &self.cfg,
-                        Path::new(&self.lock.model_path),
+                        &model,
                         mmproj.as_deref(),
                         Bind {
                             host: "127.0.0.1",
@@ -206,17 +228,19 @@ impl Gw {
             }
             Slot::Image | Slot::Video => {
                 let m = self.model(slot)?;
+                let files = self.resolved_files(m)?;
                 (
                     self.engine_exe(super::catalog::SD)?,
-                    engine::sd_args(&m.files, &m.main, port, threads),
+                    engine::sd_args(&files, &m.main, port, threads),
                 )
             }
             Slot::SpeechToText => {
                 let m = self.model(slot)?;
                 let path = m.main_path().unwrap_or_default();
+                let path = self.resolve(path)?;
                 (
                     self.engine_exe(super::catalog::WHISPER)?,
-                    engine::whisper_args(Path::new(path), port, threads, &self.cfg.speech_to_text.language),
+                    engine::whisper_args(&path, port, threads, &self.cfg.speech_to_text.language),
                 )
             }
         })
@@ -690,8 +714,16 @@ async fn speech(State(gw): State<Shared>, Json(req): Json<SpeechReq>) -> Result<
         )
     })?;
     let exe = gw.engine_exe("llama-tts")?;
-    let model = m.main_path().unwrap_or_default().to_string();
-    let mmproj = m.files.get("mmproj").cloned().unwrap_or_default();
+    let model = gw.resolve(m.main_path().unwrap_or_default())?;
+    let mmproj = match m.files.get("mmproj") {
+        Some(p) if !p.is_empty() => gw.resolve(p)?,
+        _ => {
+            return Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "text_to_speech model is missing its projector: run `yourai rebuild`",
+            ))
+        }
+    };
     let tc = &gw.cfg.text_to_speech;
     let language = req.language.as_deref().unwrap_or(&tc.language).to_string();
     let speaker = (!tc.speaker_file.is_empty())
@@ -700,14 +732,7 @@ async fn speech(State(gw): State<Shared>, Json(req): Json<SpeechReq>) -> Result<
 
     let _tts = gw.tts.lock().await;
     let tmp = gw.state_dir.join(format!("tts-{}.wav", std::process::id()));
-    let args = engine::tts_args(
-        Path::new(&model),
-        Path::new(&mmproj),
-        text,
-        &language,
-        speaker.as_deref(),
-        &tmp,
-    );
+    let args = engine::tts_args(&model, &mmproj, text, &language, speaker.as_deref(), &tmp);
     let log_file = std::fs::File::options()
         .create(true)
         .append(true)

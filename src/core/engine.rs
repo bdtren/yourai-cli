@@ -5,7 +5,7 @@ use super::catalog::{self, Catalog, EngineEntry, Model};
 use super::config::Config;
 use super::downloader;
 use super::hardware::{GpuVendor, Hardware};
-use super::paths;
+use super::store::{self, Store};
 use crate::error::{CliError, Exit};
 use crate::ui;
 
@@ -123,28 +123,34 @@ pub fn available(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> bool {
         .is_some_and(|e| candidate_keys(hw).iter().any(|k| e.assets.contains_key(k)))
 }
 
-/// Download size of the build `ensure_spec` would install, or 0 if it is already installed.
+/// Relative install folder name under `engines/` (shared by module and cache).
+pub fn engine_folder(spec: &EngineSpec, version: &str, key: &str) -> String {
+    if spec.name == LLAMA.name {
+        format!("{version}-{key}")
+    } else {
+        format!("{}-{version}-{key}", spec.exe)
+    }
+}
+
+fn module_spec_dir(store: &Store, spec: &EngineSpec, version: &str, key: &str) -> PathBuf {
+    store.engines_dir().join(engine_folder(spec, version, key))
+}
+
+fn cache_spec_dir(spec: &EngineSpec, version: &str, key: &str) -> PathBuf {
+    Store::cache_engines().join(engine_folder(spec, version, key))
+}
+
+/// Download size of the build `ensure_spec` would install, or 0 if it is already in the
+/// shared cache (a later build can fast-copy it).
 pub fn download_mb(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> f64 {
     let Some(entry) = catalog.engine(spec.name) else {
         return 0.0;
     };
     select_key_for(hw, entry, spec.label)
         .ok()
-        .filter(|(k, _)| !spec_dir(spec, &entry.version, k).join(".installed").is_file())
+        .filter(|(k, _)| !cache_spec_dir(spec, &entry.version, k).join(".installed").is_file())
         .and_then(|(k, _)| entry.assets.get(&k).map(|v| v.iter().map(|a| a.size_mb).sum()))
         .unwrap_or(0.0)
-}
-
-pub fn install_dir(version: &str, key: &str) -> PathBuf {
-    paths::engines().join(format!("{version}-{key}"))
-}
-
-fn spec_dir(spec: &EngineSpec, version: &str, key: &str) -> PathBuf {
-    if spec.name == LLAMA.name {
-        install_dir(version, key)
-    } else {
-        paths::engines().join(format!("{}-{version}-{key}", spec.exe))
-    }
 }
 
 fn find_exe(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -221,16 +227,30 @@ pub fn lib_env_var() -> &'static str {
     }
 }
 
-/// Downloads, verifies, unpacks, and smoke-tests one engine build. Idempotent.
-fn install_spec(spec: &EngineSpec, entry: &EngineEntry, key: &str) -> anyhow::Result<PathBuf> {
+fn engine_ready(dir: &Path, spec: &EngineSpec) -> Option<PathBuf> {
+    let exe = find_exe(dir, spec.exe)?;
+    (dir.join(".installed").is_file() && smoke(&exe, spec).is_ok()).then_some(exe)
+}
+
+/// Downloads, verifies, unpacks, and smoke-tests one engine build into the project module.
+fn install_spec(store: &Store, spec: &EngineSpec, entry: &EngineEntry, key: &str) -> anyhow::Result<PathBuf> {
     let label = spec.label;
-    let dir = spec_dir(spec, &entry.version, key);
-    if let Some(exe) = find_exe(&dir, spec.exe) {
-        if dir.join(".installed").is_file() && smoke(&exe, spec).is_ok() {
+    let dir = module_spec_dir(store, spec, &entry.version, key);
+    let cache = cache_spec_dir(spec, &entry.version, key);
+
+    if !store.opts.force {
+        if let Some(exe) = engine_ready(&dir, spec) {
             ui::ok(format!("engine {label} {} ({key}) is installed", entry.version));
             return Ok(exe);
         }
+        if store::try_copy_engine_from_cache(store, &dir, &cache)? {
+            if let Some(exe) = engine_ready(&dir, spec) {
+                ui::ok(format!("engine {label} {} ({key}) is installed", entry.version));
+                return Ok(exe);
+            }
+        }
     }
+
     let assets = entry
         .assets
         .get(key)
@@ -238,8 +258,9 @@ fn install_spec(spec: &EngineSpec, entry: &EngineEntry, key: &str) -> anyhow::Re
     let staging = dir.with_extension("staging");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
+    std::fs::create_dir_all(store.downloads_dir())?;
     for a in assets {
-        let dest = paths::downloads().join(&a.file);
+        let dest = store.downloads_dir().join(&a.file);
         let url = entry.asset_url(a);
         downloader::download(&downloader::Request {
             url: &url,
@@ -266,18 +287,24 @@ fn install_spec(spec: &EngineSpec, entry: &EngineEntry, key: &str) -> anyhow::Re
     }
     smoke(&exe, spec)?;
     std::fs::write(dir.join(".installed"), key)?;
+    store::maybe_save_engine_dir(store, &dir, &cache)?;
     ui::ok(format!("engine {label} {} ({key}) installed", entry.version));
     Ok(exe)
 }
 
-/// Installs the best llama.cpp build.
-pub fn ensure(hw: &Hardware, catalog: &Catalog) -> anyhow::Result<(String, PathBuf)> {
-    ensure_spec(hw, catalog, &LLAMA)
+/// Installs the best llama.cpp build into the project module.
+pub fn ensure(store: &Store, hw: &Hardware, catalog: &Catalog) -> anyhow::Result<(String, PathBuf)> {
+    ensure_spec(store, hw, catalog, &LLAMA)
 }
 
 /// Installs the best build of an engine, retrying with the next build (Vulkan, then CPU)
 /// if one fails its smoke test.
-pub fn ensure_spec(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> anyhow::Result<(String, PathBuf)> {
+pub fn ensure_spec(
+    store: &Store,
+    hw: &Hardware,
+    catalog: &Catalog,
+    spec: &EngineSpec,
+) -> anyhow::Result<(String, PathBuf)> {
     let entry = catalog
         .engine(spec.name)
         .ok_or_else(|| anyhow::anyhow!("the catalog has no {} engine; run `yourai update`", spec.label))?;
@@ -285,7 +312,7 @@ pub fn ensure_spec(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> anyho
     if let Some(n) = note {
         ui::warn(n);
     }
-    let mut last = match install_spec(spec, entry, &key) {
+    let mut last = match install_spec(store, spec, entry, &key) {
         Ok(exe) => return Ok((key, exe)),
         Err(e) => e,
     };
@@ -301,7 +328,7 @@ pub fn ensure_spec(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> anyho
             "the {label} {tried} build did not work on this machine ({last}); trying {k}",
             label = spec.label
         ));
-        match install_spec(spec, entry, &k) {
+        match install_spec(store, spec, entry, &k) {
             Ok(exe) => return Ok((k, exe)),
             Err(e) => {
                 last = e;

@@ -39,9 +39,13 @@ after asking, if `allow_write = true`) and use the capabilities above. Type `/he
 | `data/docs/` | you | Reserved for document search in a future version. |
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
 | `outputs/` | yourai | Images, videos, and audio you create. Gitignored. |
-| `.yourai/` | yourai | Runtime state, logs, lock file, and secrets. Gitignored; do not share. |
+| `yourai.lock` | yourai | Which models and engines this project uses. Safe to commit. |
+| `yourai_module/` | yourai | Downloaded models and engines for this project. Gitignored; delete anytime and run `yourai build` again. |
+| `.yourai/` | yourai | Runtime state, logs, and secrets. Gitignored; do not share. |
 
-Models and engines are stored once in `~/.yourai` and shared by all projects.
+`yourai build` installs into `yourai_module/`. Use `yourai build -s` to also keep a copy in
+`~/.yourai` for other projects, and `yourai build -f` to download from the network instead of
+using that cache (`-f -s` updates the saved copy).
 
 ## Changing settings
 

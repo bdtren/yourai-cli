@@ -11,7 +11,15 @@ use crate::core::paths;
 use crate::ui;
 
 /// Folders the agent never lists or reads: secrets, caches, and dependencies.
-const HIDDEN: [&str; 6] = [".yourai", ".git", "node_modules", "target", ".venv", "__pycache__"];
+const HIDDEN: [&str; 7] = [
+    ".yourai",
+    "yourai_module",
+    ".git",
+    "node_modules",
+    "target",
+    ".venv",
+    "__pycache__",
+];
 const MAX_LIST: usize = 300;
 
 pub struct Sandbox {

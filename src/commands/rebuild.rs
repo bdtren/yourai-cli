@@ -1,9 +1,10 @@
 use super::{build, lifecycle};
 use crate::core::lock;
 use crate::core::project::{Project, State};
+use crate::core::store::Opts;
 use crate::ui;
 
-pub fn run(p: &Project, accept_license: bool) -> anyhow::Result<()> {
+pub fn run(p: &Project, accept_license: bool, opts: Opts) -> anyhow::Result<()> {
     p.upgrade_config()?;
     let cfg = p.config()?;
     let current = lock::section_hashes(&cfg, &p.system_prompt(&cfg));
@@ -22,7 +23,7 @@ pub fn run(p: &Project, accept_license: bool) -> anyhow::Result<()> {
 
     if changed.iter().any(|s| lock::BUILD_SECTIONS.contains(&s.as_str())) {
         ui::info("models or engines changed: checking downloads (files already present are reused)");
-        build::prepare(p, &cfg, accept_license)?;
+        build::prepare(p, &cfg, accept_license, opts)?;
     } else if let Some(mut l) = p.lock() {
         l.sections = current;
         lock::save(&p.lock_path(), &l)?;

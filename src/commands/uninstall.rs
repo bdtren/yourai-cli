@@ -77,7 +77,7 @@ pub fn run() -> anyhow::Result<()> {
             return fail_hint(
                 Exit::Unsupported,
                 format!("yourai at {} was not installed by the yourai installer", exe.display()),
-                "delete that file yourself; models and engines are in ~/.yourai",
+                "delete that file yourself; project models are in yourai_module/, shared cache in ~/.yourai",
             );
         }
         Method::Script => {}

@@ -2,7 +2,7 @@
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI with a
 phone. The person and project are made up; the commands and output come from a real
-run of yourai v0.0.3 (some numbers are rounded).
+run of yourai v0.0.4 (some numbers are rounded).
 
 **Who:** Duy, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
@@ -15,7 +15,7 @@ works offline, and never sends his notes to anyone.
 
 ```console
 $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
-yourai: installing yourai v0.0.3 for aarch64-apple-darwin
+yourai: installing yourai v0.0.4 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
 yourai: added /Users/duy/.yourai/bin to PATH in /Users/duy/.zshrc
@@ -169,7 +169,7 @@ Review
 ╞══════════════════════╪════════════════════════════════════════════════════╡
 │ Download             ┆ 420 MB model + 16 MB engine                        │
 │ Memory while running ┆ about 869 MB (budget 20.8 GB)                      │
-│ Disk use             ┆ about 461 MB in ~/.yourai (shared by all projects) │
+│ Disk use             ┆ about 461 MB in yourai_module/ (project-local)     │
 └──────────────────────┴────────────────────────────────────────────────────┘
 Nothing is downloaded yet. `yourai build` downloads after you confirm the model license.
 ✔ Created study-buddy
@@ -187,12 +187,14 @@ The new folder:
 ```text
 study-buddy/
 ├── yourai.toml          # all settings, with comments
+├── yourai.lock          # written by `yourai build` (commit this)
+├── yourai_module/       # models and engines (gitignored; delete anytime)
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio he creates (step 10)
 ├── scripts/             # start/stop helpers
 ├── README.md
-└── .gitignore           # ignores .yourai/ and outputs/
+└── .gitignore           # ignores .yourai/, yourai_module/, and outputs/
 ```
 
 He makes it a study tutor by editing `prompts/system.md`:
@@ -273,7 +275,7 @@ you › /reset
 you › /exit
 ```
 
-The agent can only see the project folder (`agent.workspace`), never `.yourai/` where the
+The agent can only see the project folder (`agent.workspace`), never `.yourai/` or `yourai_module/` where the
 secrets live, and it can also read PDFs. It cannot change files unless he sets
 `agent.allow_write = true`, and even then it shows a preview and asks first.
 
@@ -360,7 +362,8 @@ Downloading model Qwen2.5 7B Instruct…
 ✔ study-buddy is running
 ```
 
-The old model stays in `~/.yourai/models`, so switching back is instant.
+The old model stays in `yourai_module/models`, so switching back is instant. With
+`yourai build -s`, a copy also stays in `~/.yourai` for other projects.
 
 ## 10. Pictures and speech: `yourai image`, `speak`, and `transcribe`
 
@@ -477,7 +480,7 @@ Updates for this project
 
 $ yourai self-update --check
 Checking for a new version…
-✔ yourai v0.0.3 is the latest version
+✔ yourai v0.0.4 is the latest version
 ```
 
 ## 15. Done for the semester: `yourai stop` and `yourai uninstall`

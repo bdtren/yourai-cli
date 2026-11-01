@@ -60,9 +60,10 @@ pub fn hardware_table(hw: &Hardware) -> comfy_table::Table {
         None => "unknown".into(),
     };
     row(&mut t, "GPU memory", vram, &hw.vram_source, hw.vram_confidence);
+    let disk_label = format!("Free disk ({})", paths::home().display());
     row(
         &mut t,
-        "Free disk (~/.yourai)",
+        &disk_label,
         format!("{:.1} GB", hw.disk_free_gb),
         "system",
         Confidence::High,

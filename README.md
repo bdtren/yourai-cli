@@ -101,7 +101,7 @@ at a time.
 | --- | --- |
 | `doctor [--network] [--fix]` | Check CPU, RAM, GPU, disk, ports, and what models fit |
 | `init [DIR]` | Guided wizard that creates a project folder |
-| `build [--accept-license]` | Download and verify the engine and model |
+| `build [-s] [-f] [--accept-license]` | Download into `yourai_module/` (`-s` also saves to `~/.yourai`, `-f` forces a network download) |
 | `start` / `stop` | Start or stop the AI in the background |
 | `pause` / `resume` | Unload the model to free memory, then load it again |
 | `status` | Running state, port, model, and memory use |
@@ -112,8 +112,8 @@ at a time.
 | `speak <text> [--out FILE]` | Text to speech, saved as WAV (needs `[text_to_speech]`) |
 | `transcribe <file> [--out FILE]` | Speech to text (needs `[speech_to_text]`) |
 | `config show\|get\|set\|edit\|validate` | Read or change `yourai.toml` safely |
-| `rebuild` | Apply config changes, redoing only what changed |
-| `update [--engine] [--model]` | Refresh the model catalog and apply updates |
+| `rebuild [-s] [-f]` | Apply config changes, redoing only what changed |
+| `update [--engine] [--model] [-s] [-f]` | Refresh the model catalog and apply updates |
 | `self-update [--check]` | Update the CLI itself |
 | `uninstall` | Remove the CLI (asks separately about models and engines) |
 | `completions <shell>` | Print shell completions (bash, zsh, fish, powershell, elvish) |
@@ -125,16 +125,20 @@ Run `yourai <command> --help` for details and examples.
 ```text
 my-ai/
 ├── yourai.toml          # all settings, with comments
+├── yourai.lock          # which models/engines this project uses (commit this)
+├── yourai_module/       # downloaded models and engines (git-ignored, like node_modules)
 ├── prompts/system.md    # the system prompt
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio you create
 ├── scripts/             # start/stop helpers for sh and PowerShell
 ├── README.md
-└── .yourai/             # runtime state, logs, lock file, secrets (git-ignored)
+└── .yourai/             # runtime state, logs, secrets (git-ignored)
 ```
 
-Models and engines are shared between projects in `~/.yourai`, so two projects using
-the same model download it once.
+Models and engines live in `yourai_module/` for this project. Delete that folder anytime,
+then run `yourai build` to restore it. Pass `-s` / `--save` to also keep a copy in
+`~/.yourai` so other projects can fast-copy it; pass `-f` / `--force` to download from the
+network instead of using that cache (`-f -s` refreshes the saved copy).
 
 ## API
 
@@ -163,7 +167,7 @@ Vision models accept OpenAI `image_url` and `input_audio` content parts in chat 
 - Every download is checked against a SHA-256 in the catalog. Models that need a license
   accepted ask before downloading.
 - The chat agent only sees `agent.workspace` (default: the project folder). It cannot leave
-  that folder, follow symlinks out of it, or read `.yourai/`. Writing is off unless
+  that folder, follow symlinks out of it, or read `.yourai/` / `yourai_module/`. Writing is off unless
   `agent.allow_write = true`, and every write asks you first with a preview.
 - Engines listen on `127.0.0.1` only; everything goes through the one public port, which
   checks the API key in LAN mode.
@@ -186,7 +190,7 @@ Vision models accept OpenAI `image_url` and `input_audio` content parts in chat 
 
 | Variable | Purpose |
 | --- | --- |
-| `YOURAI_HOME` | Shared cache folder (default `~/.yourai`) |
+| `YOURAI_HOME` | Optional shared cache folder used with `yourai build -s` (default `~/.yourai`) |
 | `YOURAI_PROJECT` | Project folder, instead of searching up from the current folder |
 | `YOURAI_API_KEY` | API key for LAN mode, instead of `.yourai/secrets.toml` |
 | `YOURAI_BASE_URL` | Where releases and the catalog are served (default `https://yourai.bdtren.com/cli`) |
@@ -214,7 +218,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.3`).
+Checklist of product features. Checked items ship in this version (`0.0.4`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
@@ -239,7 +243,7 @@ Checklist of product features. Checked items ship in this version (`0.0.3`).
 - [x] Hardware report with source and confidence
 - [x] Model catalog (bundled + remote refresh)
 - [x] Recommender for chat and code goals / quantization / context
-- [x] Shared `~/.yourai` cache across projects
+- [x] Project-local `yourai_module/` + `yourai.lock`, optional `~/.yourai` cache with `-s`/`-f`
 - [x] Resumable downloads
 - [x] llama.cpp runtime (Metal, CUDA, Vulkan, CPU builds)
 - [ ] Ollama as a managed runtime

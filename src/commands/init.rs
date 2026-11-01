@@ -533,7 +533,7 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
     e.add_row(vec![
         "Disk use".to_string(),
         format!(
-            "about {} in ~/.yourai (shared by all projects)",
+            "about {} in yourai_module/ (project-local; use `yourai build -s` to also keep a shared cache)",
             ui::gb(model_gb.unwrap_or(0.0) + caps_gb + engine_mb * 2.5 / 1000.0)
         ),
     ]);
@@ -550,6 +550,7 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
     }
     println!(
         "{}",
-        style("Nothing is downloaded yet. `yourai build` downloads after you confirm the model license.").dim()
+        style("Nothing is downloaded yet. `yourai build` downloads into yourai_module/ after you confirm the model license.")
+            .dim()
     );
 }

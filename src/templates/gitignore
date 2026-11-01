@@ -1,4 +1,6 @@
 # YourAI runtime state, logs, and secrets
 .yourai/
+# Downloaded models and engines for this project (like node_modules)
+yourai_module/
 # Images, videos, and audio created by yourai
 outputs/

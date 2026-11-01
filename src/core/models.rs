@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::catalog::{Catalog, FileRef, Model};
 use super::config::{Capability, Config};
+use super::store::Store;
 use super::{downloader, paths};
 use crate::error::{CliError, Exit};
 use crate::ui;
@@ -49,16 +50,6 @@ impl Resolved {
             .unwrap_or("model")
             .to_string()
     }
-
-    /// Role -> path for every file, including the main weights.
-    pub fn files(&self) -> BTreeMap<String, String> {
-        let mut m = BTreeMap::new();
-        m.insert(self.main_role(), self.path.display().to_string());
-        for f in &self.extras {
-            m.insert(f.role.clone(), f.path.display().to_string());
-        }
-        m
-    }
 }
 
 fn not_in_catalog(id: &str, key: &str) -> anyhow::Error {
@@ -73,17 +64,23 @@ fn file_name(f: &str) -> &str {
     f.rsplit('/').next().unwrap_or(f)
 }
 
-fn extra_file(m: &Model, role: &str, f: &FileRef) -> ModelFile {
+fn extra_file(models_root: &std::path::Path, m: &Model, role: &str, f: &FileRef) -> ModelFile {
     ModelFile {
         role: role.to_string(),
         url: m.file_url(f),
-        path: paths::models().join(&m.id).join(file_name(&f.file)),
+        path: models_root.join(&m.id).join(file_name(&f.file)),
         sha256: Some(f.sha256.clone()),
         size_gb: f.size_gb,
     }
 }
 
-fn from_catalog(m: &Model, quant: &str, key: &str, mmproj: bool) -> anyhow::Result<Resolved> {
+fn from_catalog(
+    models_root: &std::path::Path,
+    m: &Model,
+    quant: &str,
+    key: &str,
+    mmproj: bool,
+) -> anyhow::Result<Resolved> {
     let q = m.quants.get(quant).ok_or_else(|| {
         let have: Vec<&str> = m.quants.keys().map(String::as_str).collect();
         CliError::new(
@@ -95,17 +92,17 @@ fn from_catalog(m: &Model, quant: &str, key: &str, mmproj: bool) -> anyhow::Resu
     let mut extras = Vec::new();
     if mmproj {
         if let Some(f) = &m.mmproj {
-            extras.push(extra_file(m, "mmproj", f));
+            extras.push(extra_file(models_root, m, "mmproj", f));
         }
     }
     for c in &m.components {
-        extras.push(extra_file(m, &c.role, c));
+        extras.push(extra_file(models_root, m, &c.role, c));
     }
     Ok(Resolved {
         id: m.id.clone(),
         name: m.name.clone(),
         url: m.download_url(quant).unwrap(),
-        path: paths::models().join(&m.id).join(file_name(&q.file)),
+        path: models_root.join(&m.id).join(file_name(&q.file)),
         sha256: Some(q.sha256.clone()),
         size_gb: q.size_gb,
         license: m.license.clone(),
@@ -120,13 +117,13 @@ fn safe_file(f: &str) -> bool {
 }
 
 /// The always-on chat model, with its projector when `model.mmproj` asks for one.
-pub fn resolve(cfg: &Config, catalog: &Catalog) -> anyhow::Result<Resolved> {
+pub fn resolve(cfg: &Config, catalog: &Catalog, models_root: &std::path::Path) -> anyhow::Result<Resolved> {
     if cfg.model.id == "custom" {
         let safe_repo = cfg.model.repo.replace('/', "__");
         if safe_repo.contains("..") || !safe_file(&cfg.model.file) {
             anyhow::bail!("model.repo / model.file contain unsafe characters");
         }
-        let dir = paths::models().join("custom").join(&safe_repo);
+        let dir = models_root.join("custom").join(&safe_repo);
         let hf = |f: &str| format!("https://huggingface.co/{}/resolve/main/{f}", cfg.model.repo);
         let mut extras = Vec::new();
         let mm = cfg.model.mmproj.as_str();
@@ -167,7 +164,13 @@ pub fn resolve(cfg: &Config, catalog: &Catalog) -> anyhow::Result<Resolved> {
                 .into(),
         );
     }
-    let mut r = from_catalog(m, &cfg.model.quant, "model.quant", cfg.model.mmproj == "auto")?;
+    let mut r = from_catalog(
+        models_root,
+        m,
+        &cfg.model.quant,
+        "model.quant",
+        cfg.model.mmproj == "auto",
+    )?;
     let mm = cfg.model.mmproj.as_str();
     if !mm.is_empty() && mm != "auto" {
         if !safe_file(mm) {
@@ -176,7 +179,7 @@ pub fn resolve(cfg: &Config, catalog: &Catalog) -> anyhow::Result<Resolved> {
         r.extras.push(ModelFile {
             role: "mmproj".into(),
             url: format!("https://huggingface.co/{}/resolve/{}/{mm}", m.repo, m.revision),
-            path: paths::models().join(&m.id).join(mm),
+            path: models_root.join(&m.id).join(mm),
             sha256: None,
             size_gb: 0.0,
         });
@@ -185,7 +188,12 @@ pub fn resolve(cfg: &Config, catalog: &Catalog) -> anyhow::Result<Resolved> {
 }
 
 /// The model for an enabled capability.
-pub fn resolve_cap(cfg: &Config, cap: Capability, catalog: &Catalog) -> anyhow::Result<Resolved> {
+pub fn resolve_cap(
+    cfg: &Config,
+    cap: Capability,
+    catalog: &Catalog,
+    models_root: &std::path::Path,
+) -> anyhow::Result<Resolved> {
     let c = cfg.cap(cap);
     let key = cap.key();
     let m = catalog
@@ -201,7 +209,7 @@ pub fn resolve_cap(cfg: &Config, cap: Capability, catalog: &Catalog) -> anyhow::
         .into());
     }
     let quant = if c.quant.is_empty() { m.default_quant() } else { c.quant };
-    from_catalog(m, quant, &format!("{key}.quant"), true)
+    from_catalog(models_root, m, quant, &format!("{key}.quant"), true)
 }
 
 fn accepted() -> BTreeMap<String, String> {
@@ -240,18 +248,13 @@ pub fn accept_license(r: &Resolved, assume: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn ensure_file(
+fn download_one(
     url: &str,
     path: &std::path::Path,
     sha: Option<&str>,
     size_gb: f64,
     label: &str,
 ) -> anyhow::Result<String> {
-    if sha.is_none() && path.is_file() {
-        if let Ok(sha) = std::fs::read_to_string(format!("{}.sha256", path.display())) {
-            return Ok(sha.trim().to_string());
-        }
-    }
     downloader::download(&downloader::Request {
         url,
         dest: path,
@@ -261,26 +264,33 @@ fn ensure_file(
     })
 }
 
-/// Downloads the model and its extra files if needed. Returns the main file's SHA-256.
-pub fn ensure(r: &Resolved) -> anyhow::Result<String> {
+/// Downloads the model and its extra files into the project module (using the shared
+/// cache when allowed). Returns the main file's SHA-256.
+pub fn ensure(store: &Store, r: &Resolved) -> anyhow::Result<String> {
     if r.sha256.is_none() {
         ui::warn("custom model: there is no published checksum, so the file's hash is recorded on first download");
     }
-    let sha = ensure_file(
-        &r.url,
-        &r.path,
-        r.sha256.as_deref(),
-        r.size_gb,
-        &format!("model {}", r.name),
-    )?;
+    let cache = store.cache_for_model(&r.path);
+    let sha = super::store::ensure_file(store, &r.path, cache.as_deref(), |dest| {
+        download_one(
+            &r.url,
+            dest,
+            r.sha256.as_deref(),
+            r.size_gb,
+            &format!("model {}", r.name),
+        )
+    })?;
     for f in &r.extras {
-        ensure_file(
-            &f.url,
-            &f.path,
-            f.sha256.as_deref(),
-            f.size_gb,
-            &format!("{} {}", f.role, file_name(&f.path.display().to_string())),
-        )?;
+        let cache = store.cache_for_model(&f.path);
+        super::store::ensure_file(store, &f.path, cache.as_deref(), |dest| {
+            download_one(
+                &f.url,
+                dest,
+                f.sha256.as_deref(),
+                f.size_gb,
+                &format!("{} {}", f.role, file_name(&f.path.display().to_string())),
+            )
+        })?;
     }
     Ok(sha)
 }
@@ -295,10 +305,12 @@ mod tests {
         let c = Catalog::bundled();
         let mut cfg = sample();
         cfg.model.id = "qwen2.5-vl-3b".into();
-        let r = resolve(&cfg, &c).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let models = root.path().join("models");
+        let r = resolve(&cfg, &c, &models).unwrap();
         assert!(r.extra("mmproj").is_some());
         cfg.model.mmproj = String::new();
-        assert!(resolve(&cfg, &c).unwrap().extra("mmproj").is_none());
+        assert!(resolve(&cfg, &c, &models).unwrap().extra("mmproj").is_none());
     }
 
     #[test]
@@ -307,13 +319,15 @@ mod tests {
         let mut cfg = sample();
         cfg.image.enabled = true;
         cfg.image.model = "whisper-base".into();
-        assert!(resolve_cap(&cfg, Capability::Image, &c).is_err());
+        let root = tempfile::tempdir().unwrap();
+        let models = root.path().join("models");
+        assert!(resolve_cap(&cfg, Capability::Image, &c, &models).is_err());
         cfg.image.model = "flux1-schnell".into();
-        let r = resolve_cap(&cfg, Capability::Image, &c).unwrap();
-        let files = r.files();
-        assert!(files.contains_key("diffusion_model"));
-        assert!(files.contains_key("vae") && files.contains_key("t5xxl") && files.contains_key("clip_l"));
+        let r = resolve_cap(&cfg, Capability::Image, &c, &models).unwrap();
+        assert_eq!(r.main_role(), "diffusion_model");
+        let roles: Vec<_> = r.extras.iter().map(|f| f.role.as_str()).collect();
+        assert!(roles.contains(&"vae") && roles.contains(&"t5xxl") && roles.contains(&"clip_l"));
         cfg.model.id = "sd-turbo".into();
-        assert!(resolve(&cfg, &c).is_err(), "image model as chat model");
+        assert!(resolve(&cfg, &c, &models).is_err(), "image model as chat model");
     }
 }

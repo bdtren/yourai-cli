@@ -13,15 +13,18 @@ pub mod update;
 
 use crate::cli::{Cli, Command};
 use crate::core::project::Project;
+use crate::core::store::Opts;
 use clap::CommandFactory;
 
 pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
     let explicit = cli.project.clone();
+    let save = cli.save;
     let project = || Project::discover(explicit.as_deref());
+    let opts = |force: bool| Opts { save, force };
     match cli.command {
         Command::Doctor { fix, network } => doctor::run(fix, network, explicit.as_deref()),
         Command::Init(args) => init::run(args),
-        Command::Build { accept_license } => build::run(&project()?, accept_license),
+        Command::Build { accept_license, force } => build::run(&project()?, accept_license, opts(force)),
         Command::Start => lifecycle::start(&project()?),
         Command::Stop => lifecycle::stop(&project()?),
         Command::Pause => lifecycle::pause(&project()?),
@@ -30,8 +33,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
         Command::Logs { follow, lines } => lifecycle::logs(&project()?, follow, lines),
         Command::Chat => chat::run(&project()?),
         Command::Config(cmd) => config::run(&project()?, cmd),
-        Command::Rebuild { accept_license } => rebuild::run(&project()?, accept_license),
-        Command::Update { engine, model } => update::run(explicit.as_deref(), engine, model),
+        Command::Rebuild { accept_license, force } => rebuild::run(&project()?, accept_license, opts(force)),
+        Command::Update { engine, model, force } => update::run(explicit.as_deref(), engine, model, opts(force)),
         Command::SelfUpdate { check } => self_update::run(check),
         Command::Uninstall => uninstall::run(),
         Command::Completions { shell } => {

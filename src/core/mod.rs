@@ -11,3 +11,4 @@ pub mod process;
 pub mod project;
 pub mod recommender;
 pub mod secrets;
+pub mod store;

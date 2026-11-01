@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use super::config::{self, Config};
 use super::lock::{self, Lock};
+use super::store::{self, MODULE_DIR};
 use crate::error::{CliError, Exit};
 
 pub const CONFIG_FILE: &str = "yourai.toml";
+pub const LOCK_FILE: &str = "yourai.lock";
 
 pub struct Project {
     pub root: PathBuf,
@@ -91,16 +93,33 @@ impl Project {
         self.root.join(".yourai")
     }
 
+    pub fn module_dir(&self) -> PathBuf {
+        self.root.join(MODULE_DIR)
+    }
+
     pub fn log_path(&self) -> PathBuf {
         self.state_dir().join("server.log")
     }
 
     pub fn lock_path(&self) -> PathBuf {
+        self.root.join(LOCK_FILE)
+    }
+
+    /// Older builds wrote `.yourai/lock.json`.
+    pub fn legacy_lock_path(&self) -> PathBuf {
         self.state_dir().join("lock.json")
     }
 
+    /// Resolve a path stored in yourai.lock (relative to the project, or legacy absolute).
+    pub fn resolve_path(&self, stored: &str) -> anyhow::Result<PathBuf> {
+        store::resolve_lock_path(&self.root, stored)
+    }
+
     pub fn lock(&self) -> Option<Lock> {
-        lock::load(&self.lock_path())
+        if let Some(l) = lock::load(&self.lock_path()) {
+            return Some(l);
+        }
+        lock::load(&self.legacy_lock_path())
     }
 
     pub fn system_prompt(&self, cfg: &Config) -> String {

@@ -157,9 +157,9 @@ fn lan_access_generates_a_secret_outside_the_config() {
     let key = secret.lines().find(|l| l.starts_with("api_key")).unwrap();
     let value = key.split('"').nth(1).unwrap();
     assert!(!toml.contains(value));
-    assert!(std::fs::read_to_string(proj.join(".gitignore"))
-        .unwrap()
-        .contains(".yourai/"));
+    let gi = std::fs::read_to_string(proj.join(".gitignore")).unwrap();
+    assert!(gi.contains(".yourai/"));
+    assert!(gi.contains("yourai_module/"));
 }
 
 #[test]

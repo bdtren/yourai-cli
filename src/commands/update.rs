@@ -7,7 +7,8 @@ use crate::core::catalog::Catalog;
 use crate::core::config::Capability;
 use crate::core::lock::EngineLock;
 use crate::core::project::{Project, State};
-use crate::core::{engine, hardware, lock, models};
+use crate::core::store::{Opts, Store};
+use crate::core::{engine, hardware, lock, models, paths};
 use crate::error::{fail_hint, Exit};
 use crate::ui;
 
@@ -20,7 +21,7 @@ fn row(name: String, installed: String, latest: String, update: bool, what: &str
     ]
 }
 
-pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyhow::Result<()> {
+pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool, opts: Opts) -> anyhow::Result<()> {
     let pb = ui::spinner("Refreshing the model catalog…");
     let (catalog, res) = Catalog::refresh();
     pb.finish_and_clear();
@@ -43,6 +44,9 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
         }
         return Ok(());
     };
+    paths::ensure_home()?;
+    let store = Store::new(&p.root, opts);
+    store.ensure_dirs()?;
     let cfg = p.config()?;
     let Some(mut lk) = p.lock() else {
         ui::info("this project has not been built yet; `yourai build` will use the latest versions");
@@ -80,7 +84,7 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
     }
     engine_update |= !engine_updates.is_empty();
 
-    let resolved = models::resolve(&cfg, &catalog)?;
+    let resolved = models::resolve(&cfg, &catalog, &store.models_dir())?;
     let chat_update = resolved
         .sha256
         .as_deref()
@@ -95,7 +99,7 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
     let mut cap_updates = Vec::new();
     for c in cfg.enabled_caps() {
         let Some(ml) = lk.models.get(c.key()) else { continue };
-        let Ok(r) = models::resolve_cap(&cfg, c, &catalog) else {
+        let Ok(r) = models::resolve_cap(&cfg, c, &catalog, &store.models_dir()) else {
             continue;
         };
         let update = r.id == ml.id && r.sha256.as_deref().is_some_and(|s| !s.eq_ignore_ascii_case(&ml.sha256));
@@ -128,10 +132,10 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
     if want_engine && engine_update {
         let hw = hardware::detect();
         if new_engine != lk.engine_version {
-            let (key, exe) = engine::ensure(&hw, &catalog)?;
+            let (key, exe) = engine::ensure(&store, &hw, &catalog)?;
             lk.engine_version = new_engine;
             lk.engine_key = key.clone();
-            lk.engine_exe = exe.display().to_string();
+            lk.engine_exe = store.rel(&exe)?;
             if lk.engines.contains_key("llama-tts") {
                 if let Some(tts) = engine::sibling(&exe, "llama-tts") {
                     lk.engines.insert(
@@ -139,20 +143,20 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
                         EngineLock {
                             version: lk.engine_version.clone(),
                             key,
-                            exe: tts.display().to_string(),
+                            exe: store.rel(&tts)?,
                         },
                     );
                 }
             }
         }
         for spec in engine_updates {
-            let (key, exe) = engine::ensure_spec(&hw, &catalog, spec)?;
+            let (key, exe) = engine::ensure_spec(&store, &hw, &catalog, spec)?;
             lk.engines.insert(
                 spec.name.to_string(),
                 EngineLock {
                     version: catalog.engine(spec.name).map(|e| e.version.clone()).unwrap_or_default(),
                     key,
-                    exe: exe.display().to_string(),
+                    exe: store.rel(&exe)?,
                 },
             );
         }
@@ -161,18 +165,21 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
     if want_model && model_update {
         if chat_update {
             models::accept_license(&resolved, false)?;
-            lk.model_sha256 = models::ensure(&resolved)?;
-            lk.model_path = resolved.path.display().to_string();
+            lk.model_sha256 = models::ensure(&store, &resolved)?;
+            lk.model_path = store.rel(&resolved.path)?;
             if let Some(f) = resolved.extra("mmproj") {
-                lk.mmproj_path = f.path.display().to_string();
+                lk.mmproj_path = store.rel(&f.path)?;
             }
         }
         for (c, r) in cap_updates {
             models::accept_license(&r, false)?;
-            let sha = models::ensure(&r)?;
-            update_cap_lock(&mut lk, c, &r, sha);
+            let sha = models::ensure(&store, &r)?;
+            update_cap_lock(&store, &mut lk, c, &r, sha)?;
         }
-        ui::info("the previous model files were kept; delete them from ~/.yourai/models if you no longer need them");
+        ui::info(format!(
+            "the previous model files were kept under {}; delete unused ones there if you need space",
+            p.module_dir().join("models").display()
+        ));
         changed = true;
     }
     if !changed {
@@ -196,13 +203,25 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool) -> anyh
     Ok(())
 }
 
-fn update_cap_lock(lk: &mut lock::Lock, c: Capability, r: &models::Resolved, sha: String) {
+fn update_cap_lock(
+    store: &Store,
+    lk: &mut lock::Lock,
+    c: Capability,
+    r: &models::Resolved,
+    sha: String,
+) -> anyhow::Result<()> {
     if let Some(ml) = lk.models.get_mut(c.key()) {
         ml.sha256 = sha;
-        ml.files = r.files();
+        let mut files = std::collections::BTreeMap::new();
+        files.insert(r.main_role(), store.rel(&r.path)?);
+        for f in &r.extras {
+            files.insert(f.role.clone(), store.rel(&f.path)?);
+        }
+        ml.files = files;
         ml.main = r.main_role();
         ml.defaults = r.defaults.clone();
     }
+    Ok(())
 }
 
 fn short(s: &str) -> String {

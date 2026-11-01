@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -10,9 +10,14 @@ use clap::{Args, Parser, Subcommand};
     long_about = "Build and run your own local AI.\n\n\
         Typical flow:\n  yourai doctor      check this computer\n  yourai init        create a project with a guided wizard\n  \
         cd my-ai && yourai build && yourai start\n  yourai chat        talk to it in the terminal",
+    disable_version_flag = true,
     propagate_version = true
 )]
 pub struct Cli {
+    /// Print version
+    #[arg(short = 'v', short_alias = 'V', long = "version", action = ArgAction::Version)]
+    _version: (),
+
     /// Show full error details
     #[arg(long, global = true)]
     pub debug: bool,
@@ -24,6 +29,10 @@ pub struct Cli {
     /// Disable colored output (also honors NO_COLOR)
     #[arg(long, global = true)]
     pub no_color: bool,
+
+    /// Also keep a copy in the shared ~/.yourai cache (and prefer copying from it)
+    #[arg(short = 's', long = "save", global = true)]
+    pub save: bool,
 
     #[command(subcommand)]
     pub command: Command,
@@ -52,12 +61,20 @@ pub enum Command {
 
     /// Download the engine and model for this project
     #[command(
-        after_help = "Downloads go to ~/.yourai and are reused by every project.\n\nExamples:\n  yourai build\n  yourai build --accept-license"
+        after_help = "Files are installed under yourai_module/ (gitignored). yourai.lock records them.\n\n\
+        Flag combos:\n  yourai build          use ~/.yourai cache if present, else download into yourai_module/\n  \
+        yourai build -s       same, and also write new downloads into ~/.yourai\n  \
+        yourai build -f       always download online into yourai_module/\n  \
+        yourai build -f -s    download online and update the saved ~/.yourai copy\n\n\
+        Examples:\n  yourai build\n  yourai build --accept-license\n  yourai build -s\n  yourai build -f -s"
     )]
     Build {
         /// Accept the model license without asking
         #[arg(long)]
         accept_license: bool,
+        /// Download from the network even if a shared-cache copy exists
+        #[arg(short = 'f', long = "force")]
+        force: bool,
     },
 
     /// Start the AI in the background
@@ -91,12 +108,16 @@ pub enum Command {
         /// Accept the model license without asking
         #[arg(long)]
         accept_license: bool,
+        /// Download from the network even if a shared-cache copy exists
+        #[arg(short = 'f', long = "force")]
+        force: bool,
     },
 
     /// Refresh the model catalog and update the engine or model
     #[command(
-        after_help = "Without flags, only the catalog is refreshed and available updates are listed.\n\n\
-        Examples:\n  yourai update\n  yourai update --engine\n  yourai update --model"
+        after_help = "Without flags, only the catalog is refreshed and available updates are listed.\n\
+        Use -s/--save and -f/--force the same way as `yourai build`.\n\n\
+        Examples:\n  yourai update\n  yourai update --engine\n  yourai update --model\n  yourai update --model -f -s"
     )]
     Update {
         /// Install the newer engine version for this project
@@ -105,6 +126,9 @@ pub enum Command {
         /// Download the newer model file for this project
         #[arg(long)]
         model: bool,
+        /// Download from the network even if a shared-cache copy exists
+        #[arg(short = 'f', long = "force")]
+        force: bool,
     },
 
     /// Update the yourai CLI itself

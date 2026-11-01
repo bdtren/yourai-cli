@@ -108,19 +108,26 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
             "run `yourai rebuild` to apply the changes",
         );
     }
-    let engine_exe = PathBuf::from(&lk.engine_exe);
-    let model = PathBuf::from(&lk.model_path);
+    let resolve = |s: &str| -> anyhow::Result<PathBuf> { p.resolve_path(s) };
+    let engine_exe = resolve(&lk.engine_exe)?;
+    let model = resolve(&lk.model_path)?;
     let mut needed: Vec<PathBuf> = vec![engine_exe, model];
     if !lk.mmproj_path.is_empty() {
-        needed.push(PathBuf::from(&lk.mmproj_path));
+        needed.push(resolve(&lk.mmproj_path)?);
     }
-    needed.extend(lk.engines.values().map(|e| PathBuf::from(&e.exe)));
-    needed.extend(lk.models.values().flat_map(|m| m.files.values().map(PathBuf::from)));
+    for e in lk.engines.values() {
+        needed.push(resolve(&e.exe)?);
+    }
+    for m in lk.models.values() {
+        for f in m.files.values() {
+            needed.push(resolve(f)?);
+        }
+    }
     if let Some(missing) = needed.iter().find(|f| !f.is_file()) {
         return fail_hint(
             Exit::Runtime,
-            format!("{} is missing from ~/.yourai", missing.display()),
-            "run `yourai build`",
+            format!("{} is missing from yourai_module/", missing.display()),
+            "run `yourai build` (or `yourai build -s` to reuse the shared cache)",
         );
     }
     gateway::kill_leftovers(p);
@@ -364,6 +371,17 @@ pub fn status(p: &Project) -> anyhow::Result<()> {
             Some(l) => format!("yes, engine llama.cpp {} ({})", l.engine_version, l.engine_key),
             None => "no, run `yourai build`".into(),
         },
+    ]);
+    t.add_row(vec![
+        "Module".to_string(),
+        format!("{} (models and engines)", p.module_dir().display()),
+    ]);
+    t.add_row(vec![
+        "Shared cache".to_string(),
+        format!(
+            "{} (optional, with `yourai build -s`)",
+            crate::core::paths::home().display()
+        ),
     ]);
     t.add_row(vec![
         "Address".to_string(),
