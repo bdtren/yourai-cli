@@ -173,8 +173,12 @@ fn start_refuses_legacy_absolute_lock_without_modules() {
         .code(5)
         .stderr(predicate::str::contains("not been built yet").and(predicate::str::contains("yourai build")));
     assert!(!proj.join("yourai_modules").exists());
-    let after = std::fs::read_to_string(proj.join("yourai.lock")).unwrap();
-    assert!(after.contains(".yourai") || after.contains(&*abs_model.to_string_lossy()));
+    // Start must not rewrite the lock into yourai_modules/ paths.
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(proj.join("yourai.lock")).unwrap()).unwrap();
+    let model = after["model_path"].as_str().unwrap();
+    assert!(std::path::Path::new(model).is_absolute());
+    assert!(!model.replace('\\', "/").starts_with("yourai_modules/"));
 }
 
 #[test]
