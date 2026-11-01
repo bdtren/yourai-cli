@@ -100,7 +100,8 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
             "run `yourai build`",
         );
     };
-    let changed = lock::changed(&lk, &lock::section_hashes(cfg, &p.system_prompt(cfg)));
+    let mut cfg = cfg.clone();
+    let changed = lock::changed(&lk, &lock::section_hashes(&cfg, &p.system_prompt(&cfg)));
     if changed.iter().any(|s| lock::BUILD_SECTIONS.contains(&s.as_str())) {
         return fail_hint(
             Exit::Runtime,
@@ -126,21 +127,34 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
     if let Some(missing) = needed.iter().find(|f| !f.is_file()) {
         return fail_hint(
             Exit::Runtime,
-            format!("{} is missing from yourai_module/", missing.display()),
-            "run `yourai build` (or `yourai build -s` to reuse the shared cache)",
+            "this project has not been built yet",
+            format!(
+                "run `yourai build` (missing {})",
+                missing.display()
+            ),
         );
     }
     gateway::kill_leftovers(p);
     if !process::port_free(&cfg.server.host, cfg.server.port) {
         let alt = process::next_free_port(&cfg.server.host, cfg.server.port + 1).unwrap_or(cfg.server.port + 1);
-        return Err(CliError::new(
-            Exit::Runtime,
-            format!("port {} is already used by another program", cfg.server.port),
-        )
-        .hint(format!(
-            "run `yourai config set server.port {alt}`, then `yourai start`"
-        ))
-        .into());
+        match pick_listen_port(cfg.server.port, false, alt, ui::interactive()) {
+            PortPick::Keep(_) => {}
+            PortPick::Offer { busy, alt } => {
+                if !ui::confirm(
+                    &format!("Port {busy} is in use. Start on {alt} instead?"),
+                    true,
+                    false,
+                )? {
+                    return Err(busy_port_err(busy, alt).into());
+                }
+                super::config::set_value(p, "server.port", &alt.to_string())?;
+                cfg.server.port = alt;
+                ui::ok(format!("server.port is now {alt}"));
+            }
+            PortPick::Abort { busy, alt } => {
+                return Err(busy_port_err(busy, alt).into());
+            }
+        }
     }
     if !cfg.server.is_loopback() {
         ui::warn(format!(
@@ -149,7 +163,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         ));
     }
 
-    api_key_file(p, cfg)?;
+    api_key_file(p, &cfg)?;
     let exe = std::env::current_exe()?;
     let args = vec![
         "--project".to_string(),
@@ -188,7 +202,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
                 .hint(explain_failure(&lines))
                 .into());
         }
-        if health(cfg) == Some(200) {
+        if health(&cfg) == Some(200) {
             break;
         }
         if t0.elapsed() > HEALTH_TIMEOUT {
@@ -208,7 +222,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
     }
     pb.finish_and_clear();
     let mut lk = lk;
-    lk.sections = lock::section_hashes(cfg, &p.system_prompt(cfg));
+    lk.sections = lock::section_hashes(&cfg, &p.system_prompt(&cfg));
     lock::save(&p.lock_path(), &lk)?;
     ui::ok(format!(
         "{} is running (pid {pid}, loaded in {:.0}s)",
@@ -471,6 +485,42 @@ pub fn logs(p: &Project, follow: bool, lines: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What to do when the configured listen port may already be taken.
+#[derive(Debug, PartialEq, Eq)]
+enum PortPick {
+    Keep(u16),
+    /// Interactive: ask before writing `server.port` and continuing.
+    Offer { busy: u16, alt: u16 },
+    /// Non-interactive: refuse with a hint to set the port.
+    Abort { busy: u16, alt: u16 },
+}
+
+fn pick_listen_port(configured: u16, free: bool, alt: u16, interactive: bool) -> PortPick {
+    if free {
+        PortPick::Keep(configured)
+    } else if interactive {
+        PortPick::Offer {
+            busy: configured,
+            alt,
+        }
+    } else {
+        PortPick::Abort {
+            busy: configured,
+            alt,
+        }
+    }
+}
+
+fn busy_port_err(busy: u16, alt: u16) -> CliError {
+    CliError::new(
+        Exit::Runtime,
+        format!("port {busy} is already used by another program"),
+    )
+    .hint(format!(
+        "run `yourai config set server.port {alt}`, then `yourai start`"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,5 +529,26 @@ mod tests {
     fn failure_hints() {
         assert!(explain_failure(&["ggml: failed to allocate buffer".into()]).contains("smaller model"));
         assert!(explain_failure(&["couldn't bind HTTP server socket".into()]).contains("port"));
+    }
+
+    #[test]
+    fn busy_port_offers_alt_only_when_interactive() {
+        assert_eq!(pick_listen_port(8080, true, 8081, false), PortPick::Keep(8080));
+        assert_eq!(
+            pick_listen_port(8080, false, 8081, true),
+            PortPick::Offer {
+                busy: 8080,
+                alt: 8081
+            }
+        );
+        assert_eq!(
+            pick_listen_port(8080, false, 8081, false),
+            PortPick::Abort {
+                busy: 8080,
+                alt: 8081
+            }
+        );
+        let err = busy_port_err(8080, 8081);
+        assert!(err.to_string().contains("8080"));
     }
 }

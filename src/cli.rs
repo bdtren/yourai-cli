@@ -61,10 +61,10 @@ pub enum Command {
 
     /// Download the engine and model for this project
     #[command(
-        after_help = "Files are installed under yourai_module/ (gitignored). yourai.lock records them.\n\n\
-        Flag combos:\n  yourai build          use ~/.yourai cache if present, else download into yourai_module/\n  \
+        after_help = "Files are installed under yourai_modules/ (gitignored). yourai.lock records them.\n\n\
+        Flag combos:\n  yourai build          use ~/.yourai cache if present, else download into yourai_modules/\n  \
         yourai build -s       same, and also write new downloads into ~/.yourai\n  \
-        yourai build -f       always download online into yourai_module/\n  \
+        yourai build -f       always download online into yourai_modules/\n  \
         yourai build -f -s    download online and update the saved ~/.yourai copy\n\n\
         Examples:\n  yourai build\n  yourai build --accept-license\n  yourai build -s\n  yourai build -f -s"
     )]

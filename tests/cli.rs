@@ -132,6 +132,54 @@ fn init_yes_creates_valid_project_and_config_edits_work() {
 }
 
 #[test]
+fn start_refuses_legacy_absolute_lock_without_modules() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    yourai(&home, t.path())
+        .args([
+            "init",
+            "--yes",
+            "--name",
+            "legacy",
+            "--model",
+            "qwen2.5-0.5b",
+            "--port",
+            "18767",
+        ])
+        .assert()
+        .success();
+    let proj = t.path().join("legacy");
+    let abs_model = home.join("models/qwen2.5-0.5b/f.gguf");
+    std::fs::create_dir_all(abs_model.parent().unwrap()).unwrap();
+    std::fs::write(&abs_model, b"fake").unwrap();
+    let abs_exe = home.join("engines/llama/bin/llama-server");
+    std::fs::create_dir_all(abs_exe.parent().unwrap()).unwrap();
+    std::fs::write(&abs_exe, b"fake").unwrap();
+    let lock = serde_json::json!({
+        "sections": {},
+        "engine_version": "test",
+        "engine_key": "test",
+        "engine_exe": abs_exe.to_string_lossy(),
+        "model_id": "qwen2.5-0.5b",
+        "model_quant": "Q4_K_M",
+        "model_path": abs_model.to_string_lossy(),
+        "model_sha256": "0".repeat(64),
+    });
+    std::fs::write(proj.join("yourai.lock"), serde_json::to_string_pretty(&lock).unwrap()).unwrap();
+    assert!(!proj.join("yourai_modules").exists());
+    yourai(&home, &proj)
+        .arg("start")
+        .assert()
+        .code(5)
+        .stderr(
+            predicate::str::contains("not been built yet").and(predicate::str::contains("yourai build")),
+        );
+    assert!(!proj.join("yourai_modules").exists());
+    let after = std::fs::read_to_string(proj.join("yourai.lock")).unwrap();
+    assert!(after.contains(".yourai") || after.contains(&*abs_model.to_string_lossy()));
+}
+
+#[test]
 fn lan_access_generates_a_secret_outside_the_config() {
     let t = tempfile::tempdir().unwrap();
     let home = t.path().join("home");
@@ -159,7 +207,7 @@ fn lan_access_generates_a_secret_outside_the_config() {
     assert!(!toml.contains(value));
     let gi = std::fs::read_to_string(proj.join(".gitignore")).unwrap();
     assert!(gi.contains(".yourai/"));
-    assert!(gi.contains("yourai_module/"));
+    assert!(gi.contains("yourai_modules/"));
 }
 
 #[test]

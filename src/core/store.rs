@@ -1,4 +1,4 @@
-//! Project-local `yourai_module/` plus optional shared `~/.yourai` cache.
+//! Project-local `yourai_modules/` plus optional shared `~/.yourai` cache.
 //!
 //! Runtime always uses files under the project module. The shared cache is only
 //! read for a fast copy, and only written when `--save` is set.
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use super::paths;
 use crate::ui;
 
-pub const MODULE_DIR: &str = "yourai_module";
+pub const MODULE_DIR: &str = "yourai_modules";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Opts {
@@ -70,7 +70,7 @@ impl Store {
         Some(Self::cache_models().join(rel))
     }
 
-    /// Project-relative path for the lock file (`yourai_module/...`).
+    /// Project-relative path for the lock file (`yourai_modules/...`).
     pub fn rel(&self, abs: &Path) -> anyhow::Result<String> {
         let rel = abs
             .strip_prefix(&self.root)
@@ -97,6 +97,42 @@ pub fn resolve_lock_path(root: &Path, stored: &str) -> anyhow::Result<PathBuf> {
         anyhow::bail!("lock path `{stored}` must stay inside the project");
     }
     Ok(root.join(p))
+}
+
+/// True when `stored` is a project-relative path under `yourai_modules/`.
+pub fn path_in_module(stored: &str) -> bool {
+    let s = stored.replace('\\', "/");
+    !Path::new(stored).is_absolute()
+        && (s == MODULE_DIR || s.starts_with(&format!("{MODULE_DIR}/")))
+        && !s.contains("..")
+}
+
+/// Every filesystem path in the lock must live under `yourai_modules/`.
+pub fn lock_uses_module(lk: &super::lock::Lock) -> bool {
+    let mut paths = vec![lk.engine_exe.as_str(), lk.model_path.as_str()];
+    if !lk.mmproj_path.is_empty() {
+        paths.push(lk.mmproj_path.as_str());
+    }
+    for e in lk.engines.values() {
+        paths.push(e.exe.as_str());
+    }
+    for m in lk.models.values() {
+        for f in m.files.values() {
+            paths.push(f.as_str());
+        }
+    }
+    paths.into_iter().all(path_in_module)
+}
+
+/// Rename a leftover 0.0.4 `yourai_module/` folder to `yourai_modules/`.
+pub fn rename_singular_module_dir(root: &Path) -> anyhow::Result<()> {
+    let old = root.join("yourai_module");
+    let new = root.join(MODULE_DIR);
+    if old.is_dir() && !new.exists() {
+        ui::info("renaming yourai_module/ to yourai_modules/");
+        std::fs::rename(&old, &new)?;
+    }
+    Ok(())
 }
 
 /// Hardlink when possible, otherwise copy. Overwrites `dest` if it exists.
@@ -139,7 +175,7 @@ pub fn link_or_copy_tree(src: &Path, dest: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Ensure `dest` (under yourai_module) has the file. Uses the shared cache unless `force`.
+/// Ensure `dest` (under yourai_modules) has the file. Uses the shared cache unless `force`.
 /// When `save` is set after a download (or force), also updates the cache copy.
 pub fn ensure_file(
     store: &Store,
@@ -235,7 +271,7 @@ mod tests {
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
         std::fs::write(&abs, b"x").unwrap();
         let rel = store.rel(&abs).unwrap();
-        assert!(rel.starts_with("yourai_module/models/"));
+        assert!(rel.starts_with("yourai_modules/models/"));
         let back = resolve_lock_path(tmp.path(), &rel).unwrap();
         assert_eq!(back, abs);
     }
@@ -244,5 +280,40 @@ mod tests {
     fn resolve_rejects_escape() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(resolve_lock_path(tmp.path(), "../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn path_in_module_accepts_only_relative_module_paths() {
+        assert!(path_in_module("yourai_modules/models/m.gguf"));
+        assert!(path_in_module("yourai_modules"));
+        assert!(!path_in_module("yourai_module/models/m.gguf"));
+        assert!(!path_in_module("/home/me/.yourai/models/m.gguf"));
+        assert!(!path_in_module("models/m.gguf"));
+        assert!(!path_in_module("yourai_modules/../etc/passwd"));
+    }
+
+    #[test]
+    fn lock_uses_module_rejects_absolute_legacy_paths() {
+        let mut lk = super::super::lock::Lock {
+            engine_exe: "yourai_modules/engines/llama/bin/llama-server".into(),
+            model_path: "yourai_modules/models/m.gguf".into(),
+            ..Default::default()
+        };
+        assert!(lock_uses_module(&lk));
+        lk.model_path = "/Users/me/.yourai/models/m.gguf".into();
+        assert!(!lock_uses_module(&lk));
+    }
+
+    #[test]
+    fn rename_singular_module_dir_moves_legacy_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("yourai_module");
+        std::fs::create_dir_all(old.join("models")).unwrap();
+        std::fs::write(old.join("models/x.gguf"), b"x").unwrap();
+        rename_singular_module_dir(tmp.path()).unwrap();
+        assert!(!old.exists());
+        assert!(tmp.path().join("yourai_modules/models/x.gguf").is_file());
+        // Idempotent when plural already exists.
+        rename_singular_module_dir(tmp.path()).unwrap();
     }
 }

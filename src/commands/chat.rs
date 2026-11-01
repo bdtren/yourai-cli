@@ -214,6 +214,13 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
         if tools.is_empty() {
             body["stream"] = json!(true);
             match post(&client, &url, key.as_deref(), &body).and_then(|r| stream_answer(r).map_err(|e| e.to_string())) {
+                Ok(answer) if answer.trim().is_empty() => {
+                    ui::warn(
+                        "the model returned an empty reply (slow or interrupted stream). Try again, \
+                         or ask something the local model can answer without live web data.",
+                    );
+                    messages.truncate(before);
+                }
                 Ok(answer) => messages.push(json!({"role": "assistant", "content": answer})),
                 Err(e) => {
                     ui::warn(e);
@@ -246,6 +253,14 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
             let calls = msg["tool_calls"].as_array().cloned().unwrap_or_default();
             if calls.is_empty() {
                 let text = msg["content"].as_str().unwrap_or("").trim().to_string();
+                if text.is_empty() {
+                    ui::warn(
+                        "the model returned an empty reply (slow or interrupted stream). Try again, \
+                         or ask something the local model can answer without live web data.",
+                    );
+                    failed = true;
+                    break;
+                }
                 println!("{} {text}\n", style("ai ›").cyan().bold());
                 messages.push(json!({"role": "assistant", "content": text}));
                 break;

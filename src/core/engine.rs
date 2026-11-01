@@ -377,6 +377,10 @@ pub fn llama_args(
     if cfg.runtime.threads > 0 {
         a.extend(["-t".into(), cfg.runtime.threads.to_string()]);
     }
+    // WebUI stays on by default. Browser chat can show llama.cpp's
+    // "Stream resume produced no new bytes" when an SSE resume (`/v1/stream/...`)
+    // returns empty after a quiet or interrupted generation — prefer `yourai chat`
+    // or retry; local models also cannot fetch live weather/web data without a tool.
     if !cfg.server.web_ui {
         a.push("--no-webui".into());
     }

@@ -70,7 +70,14 @@ yourai chat            # talk to it in the terminal
 ```
 
 `yourai start` prints the browser address (by default <http://127.0.0.1:8080>) and the API
-base URL (`http://127.0.0.1:8080/v1`).
+base URL (`http://127.0.0.1:8080/v1`). It only starts after `yourai build` has created
+`yourai_modules/` and a root `yourai.lock` pointing there (files only in `~/.yourai` are not
+enough). If the configured port is busy, an interactive start asks whether to use the next free
+port and writes `server.port` into `yourai.toml`.
+
+Browser chat uses llama.cpp’s WebUI. A slow or interrupted reply can show
+“Stream resume produced no new bytes” — prefer `yourai chat`, or retry. Local models cannot
+fetch live weather or other web data without a tool.
 
 Non-interactive setup (for scripts and CI):
 
@@ -101,7 +108,7 @@ at a time.
 | --- | --- |
 | `doctor [--network] [--fix]` | Check CPU, RAM, GPU, disk, ports, and what models fit |
 | `init [DIR]` | Guided wizard that creates a project folder |
-| `build [-s] [-f] [--accept-license]` | Download into `yourai_module/` (`-s` also saves to `~/.yourai`, `-f` forces a network download) |
+| `build [-s] [-f] [--accept-license]` | Download into `yourai_modules/` (`-s` also saves to `~/.yourai`, `-f` forces a network download) |
 | `start` / `stop` | Start or stop the AI in the background |
 | `pause` / `resume` | Unload the model to free memory, then load it again |
 | `status` | Running state, port, model, and memory use |
@@ -126,7 +133,7 @@ Run `yourai <command> --help` for details and examples.
 my-ai/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # which models/engines this project uses (commit this)
-├── yourai_module/       # downloaded models and engines (git-ignored, like node_modules)
+├── yourai_modules/       # downloaded models and engines (git-ignored, like node_modules)
 ├── prompts/system.md    # the system prompt
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio you create
@@ -135,7 +142,7 @@ my-ai/
 └── .yourai/             # runtime state, logs, secrets (git-ignored)
 ```
 
-Models and engines live in `yourai_module/` for this project. Delete that folder anytime,
+Models and engines live in `yourai_modules/` for this project. Delete that folder anytime,
 then run `yourai build` to restore it. Pass `-s` / `--save` to also keep a copy in
 `~/.yourai` so other projects can fast-copy it; pass `-f` / `--force` to download from the
 network instead of using that cache (`-f -s` refreshes the saved copy).
@@ -167,7 +174,7 @@ Vision models accept OpenAI `image_url` and `input_audio` content parts in chat 
 - Every download is checked against a SHA-256 in the catalog. Models that need a license
   accepted ask before downloading.
 - The chat agent only sees `agent.workspace` (default: the project folder). It cannot leave
-  that folder, follow symlinks out of it, or read `.yourai/` / `yourai_module/`. Writing is off unless
+  that folder, follow symlinks out of it, or read `.yourai/` / `yourai_modules/`. Writing is off unless
   `agent.allow_write = true`, and every write asks you first with a preview.
 - Engines listen on `127.0.0.1` only; everything goes through the one public port, which
   checks the API key in LAN mode.
@@ -243,7 +250,7 @@ Checklist of product features. Checked items ship in this version (`0.0.4`).
 - [x] Hardware report with source and confidence
 - [x] Model catalog (bundled + remote refresh)
 - [x] Recommender for chat and code goals / quantization / context
-- [x] Project-local `yourai_module/` + `yourai.lock`, optional `~/.yourai` cache with `-s`/`-f`
+- [x] Project-local `yourai_modules/` + `yourai.lock`, optional `~/.yourai` cache with `-s`/`-f`
 - [x] Resumable downloads
 - [x] llama.cpp runtime (Metal, CUDA, Vulkan, CPU builds)
 - [ ] Ollama as a managed runtime

@@ -13,7 +13,7 @@ use crate::ui;
 /// Folders the agent never lists or reads: secrets, caches, and dependencies.
 const HIDDEN: [&str; 7] = [
     ".yourai",
-    "yourai_module",
+    "yourai_modules",
     ".git",
     "node_modules",
     "target",

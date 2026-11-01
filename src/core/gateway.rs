@@ -878,6 +878,7 @@ const HOP_BY_HOP: [&str; 6] = [
 ];
 
 /// Everything else (chat completions, the browser chat page, /health) goes to llama-server.
+/// Responses are streamed (`Body::from_stream`) so SSE / WebUI resume paths are not buffered.
 async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
     let Some(port) = gw.running_port(Slot::Chat) else {
         return ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "the chat model is still loading").into_response();
@@ -887,6 +888,7 @@ async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
         .path_and_query()
         .map(|p| p.as_str().to_string())
         .unwrap_or_else(|| "/".into());
+    let stream_resume = pq.starts_with("/v1/stream");
     let mut rb = gw
         .http
         .request(req.method().clone(), format!("http://127.0.0.1:{port}{pq}"));
@@ -898,10 +900,19 @@ async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
     let body = reqwest::Body::wrap_stream(req.into_body().into_data_stream());
     let r = match rb.body(body).send().await {
         Ok(r) => r,
-        Err(e) => return upstream(e).into_response(),
+        Err(e) => {
+            if stream_resume {
+                log(format!("proxy {pq} failed: {e}"));
+            }
+            return upstream(e).into_response();
+        }
     };
+    if stream_resume && !r.status().is_success() {
+        log(format!("proxy {pq} upstream status {}", r.status()));
+    }
     let mut resp = Response::builder().status(r.status().as_u16());
     for (k, v) in r.headers() {
+        // Forward SSE / cache headers so the browser WebUI can resume streams.
         if !HOP_BY_HOP.contains(&k.as_str()) {
             resp = resp.header(k, v);
         }

@@ -1,6 +1,6 @@
 {
   "name": "@yourai/cli-darwin-arm64",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "The yourai binary for darwin-arm64 (installed automatically by the yourai package)",
   "homepage": "https://yourai.bdtren.com",
   "repository": {

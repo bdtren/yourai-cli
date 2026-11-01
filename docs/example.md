@@ -169,7 +169,7 @@ Review
 ╞══════════════════════╪════════════════════════════════════════════════════╡
 │ Download             ┆ 420 MB model + 16 MB engine                        │
 │ Memory while running ┆ about 869 MB (budget 20.8 GB)                      │
-│ Disk use             ┆ about 461 MB in yourai_module/ (project-local)     │
+│ Disk use             ┆ about 461 MB in yourai_modules/ (project-local)     │
 └──────────────────────┴────────────────────────────────────────────────────┘
 Nothing is downloaded yet. `yourai build` downloads after you confirm the model license.
 ✔ Created study-buddy
@@ -188,13 +188,13 @@ The new folder:
 study-buddy/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # written by `yourai build` (commit this)
-├── yourai_module/       # models and engines (gitignored; delete anytime)
+├── yourai_modules/       # models and engines (gitignored; delete anytime)
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio he creates (step 10)
 ├── scripts/             # start/stop helpers
 ├── README.md
-└── .gitignore           # ignores .yourai/, yourai_module/, and outputs/
+└── .gitignore           # ignores .yourai/, yourai_modules/, and outputs/
 ```
 
 He makes it a study tutor by editing `prompts/system.md`:
@@ -275,7 +275,7 @@ you › /reset
 you › /exit
 ```
 
-The agent can only see the project folder (`agent.workspace`), never `.yourai/` or `yourai_module/` where the
+The agent can only see the project folder (`agent.workspace`), never `.yourai/` or `yourai_modules/` where the
 secrets live, and it can also read PDFs. It cannot change files unless he sets
 `agent.allow_write = true`, and even then it shows a preview and asks first.
 
@@ -362,7 +362,7 @@ Downloading model Qwen2.5 7B Instruct…
 ✔ study-buddy is running
 ```
 
-The old model stays in `yourai_module/models`, so switching back is instant. With
+The old model stays in `yourai_modules/models`, so switching back is instant. With
 `yourai build -s`, a copy also stays in `~/.yourai` for other projects.
 
 ## 10. Pictures and speech: `yourai image`, `speak`, and `transcribe`

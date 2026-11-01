@@ -40,10 +40,10 @@ after asking, if `allow_write = true`) and use the capabilities above. Type `/he
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
 | `outputs/` | yourai | Images, videos, and audio you create. Gitignored. |
 | `yourai.lock` | yourai | Which models and engines this project uses. Safe to commit. |
-| `yourai_module/` | yourai | Downloaded models and engines for this project. Gitignored; delete anytime and run `yourai build` again. |
+| `yourai_modules/` | yourai | Downloaded models and engines for this project. Gitignored; delete anytime and run `yourai build` again. |
 | `.yourai/` | yourai | Runtime state, logs, and secrets. Gitignored; do not share. |
 
-`yourai build` installs into `yourai_module/`. Use `yourai build -s` to also keep a copy in
+`yourai build` installs into `yourai_modules/`. Use `yourai build -s` to also keep a copy in
 `~/.yourai` for other projects, and `yourai build -f` to download from the network instead of
 using that cache (`-f -s` updates the saved copy).
 

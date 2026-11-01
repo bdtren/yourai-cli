@@ -115,11 +115,19 @@ impl Project {
         store::resolve_lock_path(&self.root, stored)
     }
 
+    /// Root `yourai.lock` only. Start/runtime ignore legacy `.yourai/lock.json`
+    /// and locks that still point outside `yourai_modules/`.
     pub fn lock(&self) -> Option<Lock> {
-        if let Some(l) = lock::load(&self.lock_path()) {
-            return Some(l);
+        let l = lock::load(&self.lock_path())?;
+        if !self.module_dir().is_dir() || !store::lock_uses_module(&l) {
+            return None;
         }
-        lock::load(&self.legacy_lock_path())
+        Some(l)
+    }
+
+    /// Any lock on disk (root or legacy), for `yourai build` migration.
+    pub fn any_lock(&self) -> Option<Lock> {
+        lock::load(&self.lock_path()).or_else(|| lock::load(&self.legacy_lock_path()))
     }
 
     pub fn system_prompt(&self, cfg: &Config) -> String {
@@ -208,5 +216,36 @@ mod tests {
         assert_eq!(p.config().unwrap(), cfg);
         assert!(!p.system_prompt(&cfg).is_empty());
         assert!(scaffold(&dir, &cfg, None).is_err());
+    }
+
+    #[test]
+    fn lock_ignores_legacy_absolute_paths_and_missing_module_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        let cfg = config::sample();
+        scaffold(&dir, &cfg, None).unwrap();
+        let p = Project { root: dir.clone() };
+
+        // Absolute paths under ~/.yourai (legacy) → not a runtime lock.
+        let legacy = Lock {
+            engine_exe: "/Users/me/.yourai/engines/llama/bin/llama-server".into(),
+            model_path: "/Users/me/.yourai/models/m.gguf".into(),
+            ..Default::default()
+        };
+        lock::save(&p.lock_path(), &legacy).unwrap();
+        assert!(p.lock().is_none());
+        assert!(p.any_lock().is_some());
+
+        // Module-relative paths but no yourai_modules/ folder → refuse.
+        let good = Lock {
+            engine_exe: "yourai_modules/engines/llama/bin/llama-server".into(),
+            model_path: "yourai_modules/models/m.gguf".into(),
+            ..Default::default()
+        };
+        lock::save(&p.lock_path(), &good).unwrap();
+        assert!(p.lock().is_none());
+
+        std::fs::create_dir_all(p.module_dir()).unwrap();
+        assert!(p.lock().is_some());
     }
 }

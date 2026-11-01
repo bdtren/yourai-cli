@@ -111,19 +111,27 @@ fn migrate_engine_tree(store: &Store, exe: &Path) -> anyhow::Result<PathBuf> {
     Ok(exe.to_path_buf())
 }
 
-/// If only a legacy `.yourai/lock.json` exists, copy artifacts into `yourai_module/` and
+/// If only a legacy `.yourai/lock.json` exists, copy artifacts into `yourai_modules/` and
 /// rewrite paths into a new root `yourai.lock`.
 fn migrate_legacy_lock(p: &Project, store: &Store) -> anyhow::Result<Option<Lock>> {
-    if p.lock_path().is_file() {
-        return Ok(None);
+    // Already a valid module-based root lock — nothing to migrate.
+    if let Some(lk) = lock::load(&p.lock_path()) {
+        if store::lock_uses_module(&lk) {
+            return Ok(None);
+        }
+        // Root lock still points at ~/.yourai — rewrite into yourai_modules/.
+        ui::info("rewriting yourai.lock paths into yourai_modules/");
+        return Ok(Some(rewrite_lock_into_module(p, store, lk)?));
     }
-    let legacy = p.legacy_lock_path();
-    let Some(mut lk) = lock::load(&legacy) else {
+    let Some(lk) = p.any_lock() else {
         return Ok(None);
     };
-    ui::info("migrating .yourai/lock.json into yourai.lock and yourai_module/");
-    store.ensure_dirs()?;
+    ui::info("migrating .yourai/lock.json into yourai.lock and yourai_modules/");
+    Ok(Some(rewrite_lock_into_module(p, store, lk)?))
+}
 
+fn rewrite_lock_into_module(p: &Project, store: &Store, mut lk: Lock) -> anyhow::Result<Lock> {
+    store.ensure_dirs()?;
     let exe = migrate_engine_tree(store, Path::new(&lk.engine_exe))?;
     lk.engine_exe = store.rel(&exe)?;
     let model = migrate_file(store, Path::new(&lk.model_path))?;
@@ -144,11 +152,11 @@ fn migrate_legacy_lock(p: &Project, store: &Store) -> anyhow::Result<Option<Lock
     }
     lock::save(&p.lock_path(), &lk)?;
     ui::ok("migrated to yourai.lock");
-    Ok(Some(lk))
+    Ok(lk)
 }
 
 /// Makes sure the engines and models of every enabled capability exist under
-/// `yourai_module/`, then writes `yourai.lock`. Safe to run repeatedly.
+/// `yourai_modules/`, then writes `yourai.lock`. Safe to run repeatedly.
 pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> anyhow::Result<Lock> {
     if cfg.server.require_api_key && secrets::api_key(&p.root).is_none() {
         return fail_hint(
@@ -159,6 +167,7 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
     }
     // Shared cache dirs (licenses, catalog) still live under YOURAI_HOME.
     paths::ensure_home()?;
+    store::rename_singular_module_dir(&p.root)?;
     let store = Store::new(&p.root, opts);
     store.ensure_dirs()?;
     let _ = migrate_legacy_lock(p, &store)?;
@@ -181,7 +190,7 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
     let total: f64 = chat.download_gb() + caps.iter().map(|(_, r)| r.download_gb()).sum::<f64>();
     if !caps.is_empty() {
         ui::info(format!(
-            "this project uses {} of models in total (files already in yourai_module/ or the shared cache are reused)",
+            "this project uses {} of models in total (files already in yourai_modules/ or the shared cache are reused)",
             ui::gb(total)
         ));
     }

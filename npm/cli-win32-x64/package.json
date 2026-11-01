@@ -1,6 +1,6 @@
 {
   "name": "@yourai/cli-win32-x64",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "The yourai binary for win32-x64 (installed automatically by the yourai package)",
   "homepage": "https://yourai.bdtren.com",
   "repository": {
