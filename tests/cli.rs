@@ -171,9 +171,7 @@ fn start_refuses_legacy_absolute_lock_without_modules() {
         .arg("start")
         .assert()
         .code(5)
-        .stderr(
-            predicate::str::contains("not been built yet").and(predicate::str::contains("yourai build")),
-        );
+        .stderr(predicate::str::contains("not been built yet").and(predicate::str::contains("yourai build")));
     assert!(!proj.join("yourai_modules").exists());
     let after = std::fs::read_to_string(proj.join("yourai.lock")).unwrap();
     assert!(after.contains(".yourai") || after.contains(&*abs_model.to_string_lossy()));

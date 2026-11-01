@@ -128,10 +128,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         return fail_hint(
             Exit::Runtime,
             "this project has not been built yet",
-            format!(
-                "run `yourai build` (missing {})",
-                missing.display()
-            ),
+            format!("run `yourai build` (missing {})", missing.display()),
         );
     }
     gateway::kill_leftovers(p);
@@ -140,11 +137,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         match pick_listen_port(cfg.server.port, false, alt, ui::interactive()) {
             PortPick::Keep(_) => {}
             PortPick::Offer { busy, alt } => {
-                if !ui::confirm(
-                    &format!("Port {busy} is in use. Start on {alt} instead?"),
-                    true,
-                    false,
-                )? {
+                if !ui::confirm(&format!("Port {busy} is in use. Start on {alt} instead?"), true, false)? {
                     return Err(busy_port_err(busy, alt).into());
                 }
                 super::config::set_value(p, "server.port", &alt.to_string())?;
@@ -490,33 +483,29 @@ pub fn logs(p: &Project, follow: bool, lines: usize) -> anyhow::Result<()> {
 enum PortPick {
     Keep(u16),
     /// Interactive: ask before writing `server.port` and continuing.
-    Offer { busy: u16, alt: u16 },
+    Offer {
+        busy: u16,
+        alt: u16,
+    },
     /// Non-interactive: refuse with a hint to set the port.
-    Abort { busy: u16, alt: u16 },
+    Abort {
+        busy: u16,
+        alt: u16,
+    },
 }
 
 fn pick_listen_port(configured: u16, free: bool, alt: u16, interactive: bool) -> PortPick {
     if free {
         PortPick::Keep(configured)
     } else if interactive {
-        PortPick::Offer {
-            busy: configured,
-            alt,
-        }
+        PortPick::Offer { busy: configured, alt }
     } else {
-        PortPick::Abort {
-            busy: configured,
-            alt,
-        }
+        PortPick::Abort { busy: configured, alt }
     }
 }
 
 fn busy_port_err(busy: u16, alt: u16) -> CliError {
-    CliError::new(
-        Exit::Runtime,
-        format!("port {busy} is already used by another program"),
-    )
-    .hint(format!(
+    CliError::new(Exit::Runtime, format!("port {busy} is already used by another program")).hint(format!(
         "run `yourai config set server.port {alt}`, then `yourai start`"
     ))
 }
@@ -536,17 +525,11 @@ mod tests {
         assert_eq!(pick_listen_port(8080, true, 8081, false), PortPick::Keep(8080));
         assert_eq!(
             pick_listen_port(8080, false, 8081, true),
-            PortPick::Offer {
-                busy: 8080,
-                alt: 8081
-            }
+            PortPick::Offer { busy: 8080, alt: 8081 }
         );
         assert_eq!(
             pick_listen_port(8080, false, 8081, false),
-            PortPick::Abort {
-                busy: 8080,
-                alt: 8081
-            }
+            PortPick::Abort { busy: 8080, alt: 8081 }
         );
         let err = busy_port_err(8080, 8081);
         assert!(err.to_string().contains("8080"));
