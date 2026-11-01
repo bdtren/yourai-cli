@@ -1,13 +1,13 @@
-# Example: Linh builds a private study buddy
+# Example: Duy builds a private study buddy
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI with a
 phone. The person and project are made up; the commands and output come from a real
 run of yourai v0.0.3 (some numbers are rounded).
 
-**Who:** Linh, a university student.
+**Who:** Duy, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
-**Goal:** a private AI that explains lecture topics and quizzes her before exams,
-works offline, and never sends her notes to anyone.
+**Goal:** a private AI that explains lecture topics and quizzes him before exams,
+works offline, and never sends his notes to anyone.
 
 ---
 
@@ -18,13 +18,13 @@ $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
 yourai: installing yourai v0.0.3 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
-yourai: added /Users/linh/.yourai/bin to PATH in /Users/linh/.zshrc
-yourai: installed to /Users/linh/.yourai/bin/yourai
+yourai: added /Users/duy/.yourai/bin to PATH in /Users/duy/.zshrc
+yourai: installed to /Users/duy/.yourai/bin/yourai
 yourai: linked /opt/homebrew/bin/yourai, so you can run yourai now
 yourai: next: run  yourai doctor  then  yourai init
 ```
 
-She opens a new terminal tab so the `PATH` change takes effect.
+He opens a new terminal tab so the `PATH` change takes effect.
 
 ## 2. Check the computer: `yourai doctor`
 
@@ -68,13 +68,83 @@ Network was not tested. Run `yourai doctor --network` to check downloads.
 Next: yourai init
 ```
 
-Her Mac can run a 14B model, and also create images, videos, and speech. She decides to
+His Mac can run a 14B model, and also create images, videos, and speech. He decides to
 start tiny to try things out, and add more later (steps 9 and 10).
 
 ## 3. Create the project: `yourai init`
 
-The interactive wizard asks one question at a time and marks the best choice for her
-hardware as **Recommended**. To pick the smallest model in one line instead, she runs:
+The interactive wizard asks one question at a time and marks the best choice for his
+hardware as **Recommended**. The first two questions are the ones people often stop on.
+
+### Goal (pick one)
+
+```console
+$ yourai init
+? Project name: study-buddy
+
+What do you want to do?
+Your goal decides which models and settings we suggest.
+
+┌───────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+│ Option                        ┆ What it means                                                                    │
+╞═══════════════════════════════╪══════════════════════════════════════════════════════════════════════════════════╡
+│ Chat assistant  (Recommended) ┆ A general assistant you talk to in the terminal, a browser, or via an API.       │
+│                               ┆ Simplest setup and lowest hardware needs.                                        │
+│ Coding assistant              ┆ Uses a model tuned for code with a longer context. Better for programming help.  │
+└───────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+Recommended for first-time users: it works on almost any computer.
+? Choose one:
+> Chat assistant (Recommended)
+  Coding assistant
+```
+
+Duy keeps **Chat assistant** (Enter). Coding would swap in a code-tuned model and a longer
+context later; either goal can still turn on the capabilities below.
+
+### Capabilities (pick any)
+
+This is a multi-select. Space toggles a row, Enter confirms. On his M5 Pro (about 20.8 GB of
+usable GPU memory) every option is pre-ticked, including short videos.
+
+```console
+What else should it be able to do?
+Pick any. Each one adds a download; image, video, and speech engines only load while you use
+them. Change them later in yourai.toml.
+
+┌──────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────┐
+│ Option                                   ┆ What it means                                                          │
+╞══════════════════════════════════════════╪════════════════════════════════════════════════════════════════════════╡
+│ Read files (agent)  (Recommended)        ┆ `yourai chat` can list and read files in the project (text, code,      │
+│                                          ┆ PDF) and use the tools you turn on below. Writing files is off until   │
+│                                          ┆ you allow it.                                                          │
+│ See images and hear audio  (Recommended) ┆ Picks a chat model that understands pictures (and, with omni models,   │
+│                                          ┆ audio). Attach files with /image and /audio in `yourai chat`.          │
+│ Create images  (Recommended)             ┆ Make pictures from a text description. Runs only while you use it.     │
+│ Speech to text  (Recommended)            ┆ Turn recordings into text with Whisper (many languages).               │
+│ Text to speech  (Recommended)            ┆ Read answers aloud and save them as WAV files.                         │
+│ Create short videos  (Recommended)       ┆ A few seconds of video from a text description. Slow: minutes per      │
+│                                          ┆ clip even on a good GPU.                                               │
+└──────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────┘
+
+Recommended for 20.8 GB of GPU memory: everything that runs comfortably on it.
+? Choose any (space to toggle, enter to confirm):
+> [x] Read files (agent) (Recommended)
+  [x] See images and hear audio (Recommended)
+  [x] Create images (Recommended)
+  [x] Speech to text (Recommended)
+  [x] Text to speech (Recommended)
+  [x] Create short videos (Recommended)
+```
+
+He unticks vision, images, speech, and video with Space (he wants a tiny first download),
+leaves **Read files (agent)** on, and presses Enter. Later questions then pick the chat model,
+quantization, context length, interface, network access, and port. Each capability he left on
+would have gotten its own model question.
+
+### Same project in one line
+
+To skip the questions and start tiny, he runs:
 
 ```console
 $ yourai init --yes --name study-buddy --model qwen2.5-0.5b
@@ -108,8 +178,9 @@ Next: cd study-buddy && yourai build && yourai start
 ```
 
 With `--yes` and no `--capabilities`, only the agent is turned on: `yourai chat` can read
-files in the project, and nothing extra is downloaded. The interactive wizard instead
-offers every capability her Mac can run, with a model question for each one.
+files in the project, and nothing extra is downloaded. Pass
+`--capabilities agent,image,stt` (and the matching `--image-model` / `--stt-model` flags) when
+you want media in a non-interactive run.
 
 The new folder:
 
@@ -118,17 +189,17 @@ study-buddy/
 ├── yourai.toml          # all settings, with comments
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
-├── outputs/             # images, videos, and audio she creates (step 10)
+├── outputs/             # images, videos, and audio he creates (step 10)
 ├── scripts/             # start/stop helpers
 ├── README.md
 └── .gitignore           # ignores .yourai/ and outputs/
 ```
 
-She makes it a study tutor by editing `prompts/system.md`:
+He makes it a study tutor by editing `prompts/system.md`:
 
 ```markdown
-You are Linh's study buddy. Explain topics simply, with one short example.
-When she says "quiz me", ask one question at a time and wait for her answer.
+You are Duy's study buddy. Explain topics simply, with one short example.
+When he says "quiz me", ask one question at a time and wait for his answer.
 If you are not sure about a fact, say so.
 ```
 
@@ -169,7 +240,7 @@ Next: yourai chat   (or open the URL above)
 $ yourai status
 ┌──────────────┬────────────────────────────────────────────────────────┐
 │ State        ┆ running                                                │
-│ Project      ┆ study-buddy (/Users/linh/study-buddy)                  │
+│ Project      ┆ study-buddy (/Users/duy/study-buddy)                  │
 │ Model        ┆ qwen2.5-0.5b Q5_K_M                                    │
 │ Built        ┆ yes, engine llama.cpp b12015 (macos-aarch64-metal)     │
 │ Address      ┆ http://127.0.0.1:8080  (API: http://127.0.0.1:8080/v1) │
@@ -180,7 +251,7 @@ $ yourai status
 └──────────────┴────────────────────────────────────────────────────────┘
 ```
 
-It runs in the background, so she can close the terminal. She also bookmarks
+It runs in the background, so he can close the terminal. He also bookmarks
 <http://127.0.0.1:8080> for the browser chat page.
 
 ## 6. Talk to it: `yourai chat`
@@ -203,10 +274,10 @@ you › /exit
 ```
 
 The agent can only see the project folder (`agent.workspace`), never `.yourai/` where the
-secrets live, and it can also read PDFs. It cannot change files unless she sets
+secrets live, and it can also read PDFs. It cannot change files unless he sets
 `agent.allow_write = true`, and even then it shows a preview and asks first.
 
-## 7. Use it from her own code (OpenAI-compatible API)
+## 7. Use it from his own code (OpenAI-compatible API)
 
 Any tool that speaks the OpenAI API works when pointed at `http://127.0.0.1:8080/v1`.
 
@@ -231,7 +302,7 @@ print(reply.choices[0].message.content)
 
 ## 8. Tune it: `yourai config` and `yourai rebuild`
 
-Answers feel too random for quizzes, so she lowers the temperature:
+Answers feel too random for quizzes, so he lowers the temperature:
 
 ```console
 $ yourai config get generation.temperature
@@ -245,7 +316,7 @@ $ yourai rebuild
 ✔ study-buddy is running (pid 16399, loaded in 1s)
 ```
 
-To paste in whole lecture summaries she needs a bigger context:
+To paste in whole lecture summaries he needs a bigger context:
 
 ```console
 $ yourai config set runtime.context_length 8192
@@ -269,12 +340,12 @@ hint: run `yourai config set server.require_api_key true`
 ```
 
 `yourai config show` prints the whole `yourai.toml`, `yourai config edit` opens it in
-her editor, and `yourai config validate` checks it.
+his editor, and `yourai config validate` checks it.
 
 ## 9. Upgrade the model
 
-The 0.5B model is fast but sometimes gets facts wrong. `doctor` said her Mac can run
-much bigger models, so she switches to the 7B one:
+The 0.5B model is fast but sometimes gets facts wrong. `doctor` said his Mac can run
+much bigger models, so he switches to the 7B one:
 
 ```console
 $ yourai config set model.id qwen2.5-7b
@@ -293,8 +364,8 @@ The old model stays in `~/.yourai/models`, so switching back is instant.
 
 ## 10. Pictures and speech: `yourai image`, `speak`, and `transcribe`
 
-For her biology slides she turns on image creation with the fast SD-Turbo model, and
-speech in both directions so she can listen to summaries and transcribe lectures:
+For his biology slides he turns on image creation with the fast SD-Turbo model, and
+speech in both directions so he can listen to summaries and transcribe lectures:
 
 ```console
 $ yourai config set image.enabled true
@@ -329,7 +400,7 @@ $ yourai transcribe lecture-week3.wav --out lecture-week3.txt
 
 Everything still goes through port 8080, so apps can use `/v1/images/generations`,
 `/v1/audio/speech`, and `/v1/audio/transcriptions` too. The image and speech engines only
-use memory while she uses them; `yourai status` shows which are loaded:
+use memory while he uses them; `yourai status` shows which are loaded:
 
 ```console
 $ yourai status
@@ -368,9 +439,9 @@ $ yourai logs -n 4
 
 `yourai logs -f` keeps following new lines until Ctrl+C.
 
-## 13. Use it from her phone (local network)
+## 13. Use it from his phone (local network)
 
-She creates a second project that other devices on her Wi-Fi can reach:
+He creates a second project that other devices on his Wi-Fi can reach:
 
 ```console
 $ cd ~ && yourai init --yes --name study-buddy-lan --model qwen2.5-7b --access lan
@@ -418,33 +489,33 @@ Stopping…
 
 $ yourai uninstall
 This will remove
-• the yourai CLI: /Users/linh/.yourai/bin/yourai
-• the PATH line added to /Users/linh/.zshrc
+• the yourai CLI: /Users/duy/.yourai/bin/yourai
+• the PATH line added to /Users/duy/.zshrc
 • Your projects are never touched.
 ? Remove the yourai CLI? Yes
-? Also delete downloaded models and engines in /Users/linh/.yourai (5.1 GB)? They are slow to download again. No
+? Also delete downloaded models and engines in /Users/duy/.yourai (5.1 GB)? They are slow to download again. No
 ✔ removed yourai. Open a new terminal to refresh PATH.
 ```
 
-She keeps the models, so reinstalling next semester needs no downloads.
+He keeps the models, so reinstalling next semester needs no downloads.
 
 ---
 
 ## Command summary
 
-| Step | Command | What it did for Linh |
+| Step | Command | What it did for Duy |
 | --- | --- | --- |
-| 2 | `yourai doctor` | Showed her Mac can run up to a 14B model |
+| 2 | `yourai doctor` | Showed his Mac can run up to a 14B model |
 | 3 | `yourai init` | Created `study-buddy/` with a reviewed plan |
 | 4 | `yourai build` | Downloaded and verified the engine and model |
 | 5 | `yourai start`, `status` | Ran it in the background on port 8080 |
-| 6 | `yourai chat` | Chatted in the terminal; the agent read her notes |
+| 6 | `yourai chat` | Chatted in the terminal; the agent read his notes |
 | 7 | API at `/v1` | Used it from curl and Python |
 | 8 | `yourai config`, `rebuild` | Lowered temperature, raised context |
 | 9 | `config set model.id` + `rebuild` | Upgraded to the 7B model |
 | 10 | `yourai image`, `speak`, `transcribe` | Made a slide picture, listened to and transcribed lectures |
 | 11 | `yourai pause`, `resume` | Freed memory, then reloaded |
 | 12 | `yourai logs` | Looked at the server log |
-| 13 | `init --access lan` | Reached it from her phone with an API key |
+| 13 | `init --access lan` | Reached it from his phone with an API key |
 | 14 | `yourai update`, `self-update` | Checked for newer engines, models, and CLI |
 | 15 | `yourai stop`, `uninstall` | Stopped it and removed the CLI, kept models |
