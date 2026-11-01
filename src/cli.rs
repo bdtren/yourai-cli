@@ -122,6 +122,81 @@ pub enum Command {
         after_help = "Examples:\n  yourai completions zsh > ~/.zfunc/_yourai\n  yourai completions bash > ~/.local/share/bash-completion/completions/yourai"
     )]
     Completions { shell: clap_complete::Shell },
+
+    /// Create an image from a description (needs [image] enabled)
+    #[command(
+        after_help = "The image is saved in outputs/images/.\n\nExamples:\n  yourai image \"a red fox in the snow\"\n  yourai image \"a logo for a bakery\" --size 768x768 --n 2"
+    )]
+    Image {
+        prompt: String,
+        /// Width x height, for example 768x512 (default: the model's size)
+        #[arg(long)]
+        size: Option<String>,
+        /// Number of images (1-4)
+        #[arg(long, default_value_t = 1)]
+        n: u32,
+        /// Sampling steps (default: the model's)
+        #[arg(long)]
+        steps: Option<u32>,
+        /// Seed for repeatable results
+        #[arg(long)]
+        seed: Option<i64>,
+        /// Things to avoid in the image
+        #[arg(long)]
+        negative: Option<String>,
+    },
+
+    /// Create a short video from a description (needs [video] enabled)
+    #[command(
+        after_help = "The video is saved in outputs/videos/. A clip takes minutes, even on a fast GPU.\n\nExamples:\n  yourai video \"waves rolling onto a beach at sunset\"\n  yourai video \"a cat walking\" --frames 49 --size 832x480"
+    )]
+    Video {
+        prompt: String,
+        /// Width x height, for example 832x480
+        #[arg(long)]
+        size: Option<String>,
+        /// Number of frames (rounded to 4n+1)
+        #[arg(long)]
+        frames: Option<u32>,
+        /// Frames per second
+        #[arg(long)]
+        fps: Option<u32>,
+        /// Sampling steps
+        #[arg(long)]
+        steps: Option<u32>,
+        /// Seed for repeatable results
+        #[arg(long)]
+        seed: Option<i64>,
+    },
+
+    /// Read text aloud and save it as a WAV file (needs [text_to_speech] enabled)
+    #[command(
+        after_help = "The audio is saved in outputs/audio/.\n\nExamples:\n  yourai speak \"Hello, world\"\n  yourai speak \"Bonjour\" --language fr --out hello.wav"
+    )]
+    Speak {
+        text: String,
+        /// Language code, for example en, fr, zh (default: text_to_speech.language)
+        #[arg(long)]
+        language: Option<String>,
+        /// Also copy the WAV file here
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+
+    /// Turn a recording into text (needs [speech_to_text] enabled)
+    #[command(after_help = "Examples:\n  yourai transcribe meeting.wav\n  yourai transcribe note.mp3 --out note.txt")]
+    Transcribe {
+        file: PathBuf,
+        /// Language code, or auto (default: speech_to_text.language)
+        #[arg(long)]
+        language: Option<String>,
+        /// Write the text to this file instead of printing it
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+
+    #[command(name = "__gateway", hide = true)]
+    Gateway,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -161,6 +236,21 @@ pub struct InitArgs {
     /// GPU memory in GB, when it cannot be detected
     #[arg(long)]
     pub vram: Option<String>,
+    /// Extra capabilities, comma separated: agent,vision,image,stt,tts,video (or none)
+    #[arg(long)]
+    pub capabilities: Option<String>,
+    /// Image model id, for example sd-turbo
+    #[arg(long)]
+    pub image_model: Option<String>,
+    /// Video model id, for example wan2.1-t2v-1.3b
+    #[arg(long)]
+    pub video_model: Option<String>,
+    /// Speech-to-text model id, for example whisper-base
+    #[arg(long)]
+    pub stt_model: Option<String>,
+    /// Text-to-speech model id, for example qwen3-tts-1.7b
+    #[arg(long)]
+    pub tts_model: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

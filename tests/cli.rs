@@ -182,6 +182,76 @@ fn invalid_flag_values_are_rejected_with_reasons() {
 }
 
 #[test]
+fn capabilities_are_configured_and_media_commands_need_a_running_ai() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    yourai(&home, t.path())
+        .args([
+            "init",
+            "--yes",
+            "--name",
+            "media",
+            "--model",
+            "qwen2.5-0.5b",
+            "--capabilities",
+            "agent,image,stt",
+            "--image-model",
+            "sd-turbo",
+            "--stt-model",
+            "whisper-base",
+            "--port",
+            "18767",
+        ])
+        .assert()
+        .success();
+    let proj = t.path().join("media");
+    for (key, want) in [
+        ("agent.enabled", "true"),
+        ("image.enabled", "true"),
+        ("image.model", "sd-turbo"),
+        ("speech_to_text.model", "whisper-base"),
+        ("video.enabled", "false"),
+        ("text_to_speech.enabled", "false"),
+    ] {
+        yourai(&home, &proj)
+            .args(["config", "get", key])
+            .assert()
+            .success()
+            .stdout(format!("{want}\n"));
+    }
+    yourai(&home, &proj)
+        .args(["config", "set", "agent.tools", "read_file,generate_image"])
+        .assert()
+        .success();
+    yourai(&home, &proj)
+        .args(["config", "set", "agent.tools", "read_file,launch_rockets"])
+        .assert()
+        .code(2);
+    yourai(&home, &proj)
+        .args(["image", "a red fox"])
+        .assert()
+        .code(5)
+        .stderr(predicate::str::contains("yourai start"));
+
+    yourai(&home, t.path())
+        .args([
+            "init",
+            "--yes",
+            "--name",
+            "bad",
+            "--model",
+            "qwen2.5-0.5b",
+            "--capabilities",
+            "image",
+            "--image-model",
+            "whisper-base",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not a valid choice"));
+}
+
+#[test]
 fn completions_print() {
     let t = tempfile::tempdir().unwrap();
     yourai(t.path(), t.path())

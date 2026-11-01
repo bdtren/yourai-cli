@@ -2,6 +2,7 @@ pub mod catalog;
 pub mod config;
 pub mod downloader;
 pub mod engine;
+pub mod gateway;
 pub mod hardware;
 pub mod lock;
 pub mod models;

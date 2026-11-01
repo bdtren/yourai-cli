@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated": "2026-10-31",
+  "version": 2,
+  "updated": "2026-11-01",
   "engines": {
     "llama-server": {
       "version": "b12015",
@@ -94,12 +94,125 @@
           }
         ]
       }
+    },
+    "sd-server": {
+      "version": "master-1031-c6dfa9d",
+      "release_base": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d",
+      "assets": {
+        "linux-x86_64-cpu": [
+          {
+            "file": "sd-master-c6dfa9d-bin-Linux-Ubuntu-24.04-x86_64.zip",
+            "sha256": "05020fdf7fd5c710c2b55bf3bd43a3b60439bdd6b57eee7fca5d14c2084b421a",
+            "size_mb": 27.3
+          }
+        ],
+        "linux-x86_64-vulkan": [
+          {
+            "file": "sd-master-c6dfa9d-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+            "sha256": "8c7a4b9364ac8ff75635cd6ddbc858bea4e0224a746b0ba0dc7d2e32e4929a41",
+            "size_mb": 37.7
+          }
+        ],
+        "macos-aarch64-metal": [
+          {
+            "file": "sd-server-master-1031-c6dfa9d-macos-aarch64-metal.tar.gz",
+            "sha256": "02983fbf6c805e3ca8c4df8374c4042ea2c8c10fd27bb60874b6dc78269ca98f",
+            "size_mb": 17.9,
+            "url": "{base_url}/engines/sd-server/master-1031-c6dfa9d/sd-server-master-1031-c6dfa9d-macos-aarch64-metal.tar.gz"
+          }
+        ],
+        "macos-x86_64-cpu": [
+          {
+            "file": "sd-server-master-1031-c6dfa9d-macos-x86_64-cpu.tar.gz",
+            "sha256": "ee49b8e9504fa84179af3d156219dbfab53638fbeac65d0b94e5e5096985e891",
+            "size_mb": 17.2,
+            "url": "{base_url}/engines/sd-server/master-1031-c6dfa9d/sd-server-master-1031-c6dfa9d-macos-x86_64-cpu.tar.gz"
+          }
+        ],
+        "windows-x86_64-cpu": [
+          {
+            "file": "sd-master-c6dfa9d-bin-win-cpu-x64.zip",
+            "sha256": "82f2fa57e325895d2d1d649a9ed48e35cda7a415a255f9fc3c9d682381960f08",
+            "size_mb": 18.1
+          }
+        ],
+        "windows-x86_64-cuda": [
+          {
+            "file": "sd-master-c6dfa9d-bin-win-cuda12-x64.zip",
+            "sha256": "b1754e73934f4e1c1cc61d6228ebff44624c8a528a9ab850ad07d5179a3dbbac",
+            "size_mb": 354.2
+          },
+          {
+            "file": "cudart-sd-bin-win-cu12-x64.zip",
+            "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+            "size_mb": 563.5
+          }
+        ],
+        "windows-x86_64-vulkan": [
+          {
+            "file": "sd-master-c6dfa9d-bin-win-vulkan-x64.zip",
+            "sha256": "31a26c404fab36ba8fe527116c4f039e70fe3f440cd6b75b28ff06305532208c",
+            "size_mb": 29.8
+          }
+        ]
+      }
+    },
+    "whisper-server": {
+      "version": "v1.9.5",
+      "release_base": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454",
+      "assets": {
+        "linux-aarch64-cpu": [
+          {
+            "file": "whisper-bin-ubuntu-arm64.tar.gz",
+            "sha256": "6b95ebfc60447df48e70ef00a73bdc3f41679ed2d01ef465827206a2ff325149",
+            "size_mb": 4.6
+          }
+        ],
+        "linux-x86_64-cpu": [
+          {
+            "file": "whisper-bin-ubuntu-x64.tar.gz",
+            "sha256": "a72becf15d7917f990f6313867a52638b82b7f9ef237fb0c980dac56a135781c",
+            "size_mb": 10.4
+          }
+        ],
+        "macos-aarch64-metal": [
+          {
+            "file": "whisper-server-v1.9.5-macos-aarch64-metal.tar.gz",
+            "sha256": "8be8154d97dc6a5d28cb76207646ea655ea28353331dddc4253bf9e23c6704d7",
+            "size_mb": 2.2,
+            "url": "{base_url}/engines/whisper-server/v1.9.5/whisper-server-v1.9.5-macos-aarch64-metal.tar.gz"
+          }
+        ],
+        "macos-x86_64-cpu": [
+          {
+            "file": "whisper-server-v1.9.5-macos-x86_64-cpu.tar.gz",
+            "sha256": "68b45bebd7b97cd224ba88bbce71b3b48b4f1468a90f7f8aa15ab4f3ab5dc4eb",
+            "size_mb": 1.4,
+            "url": "{base_url}/engines/whisper-server/v1.9.5/whisper-server-v1.9.5-macos-x86_64-cpu.tar.gz"
+          }
+        ],
+        "windows-aarch64-cpu": [
+          {
+            "file": "whisper-bin-win-cpu-arm64.zip",
+            "sha256": "28c37e7b598c3d9bbfef94f3bd67f2ee6f12b7c86f3da5edcf5e4308d615ff6d",
+            "size_mb": 4.4
+          }
+        ],
+        "windows-x86_64-cpu": [
+          {
+            "file": "whisper-bin-x64.zip",
+            "sha256": "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb",
+            "size_mb": 8.9
+          }
+        ]
+      }
     }
   },
   "models": [
     {
       "id": "qwen2.5-0.5b",
       "name": "Qwen2.5 0.5B Instruct",
+      "kind": "text",
       "params_b": 0.5,
       "repo": "bartowski/Qwen2.5-0.5B-Instruct-GGUF",
       "revision": "41ba88dbac95fed2528c92514c131d73eb5a174b",
@@ -136,6 +249,7 @@
     {
       "id": "qwen2.5-1.5b",
       "name": "Qwen2.5 1.5B Instruct",
+      "kind": "text",
       "params_b": 1.5,
       "repo": "bartowski/Qwen2.5-1.5B-Instruct-GGUF",
       "revision": "9eadc66189c7641e1ddd226b8267a9119b2ce2d4",
@@ -172,6 +286,7 @@
     {
       "id": "qwen2.5-3b",
       "name": "Qwen2.5 3B Instruct",
+      "kind": "text",
       "params_b": 3,
       "repo": "bartowski/Qwen2.5-3B-Instruct-GGUF",
       "revision": "f302c64a2269a69fb27b2f9473b362f5bb8e78d8",
@@ -208,6 +323,7 @@
     {
       "id": "llama3.2-3b",
       "name": "Llama 3.2 3B Instruct",
+      "kind": "text",
       "params_b": 3.2,
       "repo": "bartowski/Llama-3.2-3B-Instruct-GGUF",
       "revision": "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
@@ -239,6 +355,7 @@
     {
       "id": "qwen2.5-7b",
       "name": "Qwen2.5 7B Instruct",
+      "kind": "text",
       "params_b": 7.6,
       "repo": "bartowski/Qwen2.5-7B-Instruct-GGUF",
       "revision": "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031",
@@ -275,6 +392,7 @@
     {
       "id": "llama3.1-8b",
       "name": "Llama 3.1 8B Instruct",
+      "kind": "text",
       "params_b": 8,
       "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
       "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
@@ -311,6 +429,7 @@
     {
       "id": "qwen2.5-14b",
       "name": "Qwen2.5 14B Instruct",
+      "kind": "text",
       "params_b": 14.7,
       "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
       "revision": "05244aa5d871c661c80082a15d3bce44714d068d",
@@ -347,6 +466,7 @@
     {
       "id": "qwen2.5-32b",
       "name": "Qwen2.5 32B Instruct",
+      "kind": "text",
       "params_b": 32.5,
       "repo": "bartowski/Qwen2.5-32B-Instruct-GGUF",
       "revision": "2116cbb385b8ce3a4d28cf3bf1cd2039a55821a6",
@@ -383,6 +503,7 @@
     {
       "id": "llama3.3-70b",
       "name": "Llama 3.3 70B Instruct",
+      "kind": "text",
       "params_b": 70.6,
       "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF",
       "revision": "b6c5c9f176f3279204034e1d16d393105e95cb88",
@@ -409,6 +530,7 @@
     {
       "id": "qwen2.5-coder-1.5b",
       "name": "Qwen2.5 Coder 1.5B Instruct",
+      "kind": "text",
       "params_b": 1.5,
       "repo": "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF",
       "revision": "1af47f78b1f9b0c242fabe43f7a365d5a67f3207",
@@ -445,6 +567,7 @@
     {
       "id": "qwen2.5-coder-7b",
       "name": "Qwen2.5 Coder 7B Instruct",
+      "kind": "text",
       "params_b": 7.6,
       "repo": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
       "revision": "1f629da0c8bed16b9e50cee91c70693650e66c35",
@@ -481,6 +604,7 @@
     {
       "id": "qwen2.5-coder-14b",
       "name": "Qwen2.5 Coder 14B Instruct",
+      "kind": "text",
       "params_b": 14.7,
       "repo": "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
       "revision": "5b379ec4bf71bafecb5f9081ad28b19939128988",
@@ -513,6 +637,450 @@
           "size_gb": 15.7
         }
       }
+    },
+    {
+      "id": "qwen2.5-vl-3b",
+      "name": "Qwen2.5-VL 3B Instruct",
+      "kind": "vision",
+      "params_b": 3.8,
+      "repo": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF",
+      "revision": "5037fcf163dd95d1e41d1974465f0898ed108ca2",
+      "license": "Qwen Research License (non-commercial)",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/main/LICENSE",
+      "tags": [
+        "chat",
+        "vision"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.037,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
+          "sha256": "d02fe9b69ad8cadbbd228e387667af66612c44bed29ffc8eb1e7caf9ac486c12",
+          "size_gb": 1.93
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-VL-3B-Instruct-Q8_0.gguf",
+          "sha256": "fa8aeb3b6bf6152774e87d13e09892aa065f4e0c4abe90806cd8ab18ff72d9fe",
+          "size_gb": 3.285
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf",
+        "sha256": "980c9b2f78c04e6cff93d277ada09e768394f112d75db3b4e9dea8a69f9fb904",
+        "size_gb": 0.845
+      }
+    },
+    {
+      "id": "qwen2.5-vl-7b",
+      "name": "Qwen2.5-VL 7B Instruct",
+      "kind": "vision",
+      "params_b": 8.3,
+      "repo": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF",
+      "revision": "508edd0afaa66bb9e9f40587acc2184f02daf1f6",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat",
+        "vision"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.057,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+          "sha256": "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392",
+          "size_gb": 4.683
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+          "sha256": "e191b017a8406c60f59c3bd023964aa2dea83ae0ab89caa57ba3290b7379846c",
+          "size_gb": 8.099
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+        "sha256": "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
+        "size_gb": 0.853
+      }
+    },
+    {
+      "id": "gemma3-4b",
+      "name": "Gemma 3 4B Instruct",
+      "kind": "vision",
+      "params_b": 4.3,
+      "repo": "ggml-org/gemma-3-4b-it-GGUF",
+      "revision": "d0976223747697cb51e056d85c532013931fe52e",
+      "license": "Gemma Terms of Use",
+      "license_url": "https://ai.google.dev/gemma/terms",
+      "tags": [
+        "chat",
+        "vision"
+      ],
+      "context_max": 131072,
+      "kv_gb_per_1k_ctx": 0.08,
+      "quants": {
+        "Q4_K_M": {
+          "file": "gemma-3-4b-it-Q4_K_M.gguf",
+          "sha256": "882e8d2db44dc554fb0ea5077cb7e4bc49e7342a1f0da57901c0802ea21a0863",
+          "size_gb": 2.49
+        },
+        "Q8_0": {
+          "file": "gemma-3-4b-it-Q8_0.gguf",
+          "sha256": "97b06383df48336e7d2f9b56b6ce545e0fa476407a62c0bd081b53447a58e644",
+          "size_gb": 4.13
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-model-f16.gguf",
+        "sha256": "8c0fb064b019a6972856aaae2c7e4792858af3ca4561be2dbf649123ba6c40cb",
+        "size_gb": 0.851
+      }
+    },
+    {
+      "id": "gemma3-12b",
+      "name": "Gemma 3 12B Instruct",
+      "kind": "vision",
+      "params_b": 12.2,
+      "repo": "ggml-org/gemma-3-12b-it-GGUF",
+      "revision": "ec0cbabd8dbff316f659876a50202295c3c4a314",
+      "license": "Gemma Terms of Use",
+      "license_url": "https://ai.google.dev/gemma/terms",
+      "tags": [
+        "chat",
+        "vision"
+      ],
+      "context_max": 131072,
+      "kv_gb_per_1k_ctx": 0.2,
+      "quants": {
+        "Q4_K_M": {
+          "file": "gemma-3-12b-it-Q4_K_M.gguf",
+          "sha256": "7bb69bff3f48a7b642355d64a90e481182a7794707b3133890646b1efa778ff5",
+          "size_gb": 7.301
+        },
+        "Q8_0": {
+          "file": "gemma-3-12b-it-Q8_0.gguf",
+          "sha256": "0fb3edf649e9e268700467c02d11513a7e401e7c2ff95d4e1420dfe96da73990",
+          "size_gb": 12.51
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-model-f16.gguf",
+        "sha256": "30c02d056410848227001830866e0a269fcc28aaf8ca971bded494003de9f5a5",
+        "size_gb": 0.854
+      }
+    },
+    {
+      "id": "qwen2.5-omni-3b",
+      "name": "Qwen2.5-Omni 3B (images + audio)",
+      "kind": "omni",
+      "params_b": 4.7,
+      "repo": "ggml-org/Qwen2.5-Omni-3B-GGUF",
+      "revision": "75f1b73b657a50f5092502799457ccb4a4a1f9df",
+      "license": "Qwen Research License (non-commercial)",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-Omni-3B/blob/main/LICENSE.txt",
+      "tags": [
+        "chat",
+        "vision",
+        "audio"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.037,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Qwen2.5-Omni-3B-Q4_K_M.gguf",
+          "sha256": "4b0bd358c1e9ec55dd3055ef6d71c958c821533d85916a10cfa89c4552a86e29",
+          "size_gb": 2.105
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-Omni-3B-Q8_0.gguf",
+          "sha256": "c7d8b07c8d8d7a9ed1de1b8df7ac821eb4d259a224bd44310baacfaa5a473d4c",
+          "size_gb": 3.616
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-Qwen2.5-Omni-3B-Q8_0.gguf",
+        "sha256": "4e6c816cd33f7298d07cb780c136a396631e50e62f6501660271f8c6e302e565",
+        "size_gb": 1.538
+      }
+    },
+    {
+      "id": "qwen2.5-omni-7b",
+      "name": "Qwen2.5-Omni 7B (images + audio)",
+      "kind": "omni",
+      "params_b": 10.7,
+      "repo": "ggml-org/Qwen2.5-Omni-7B-GGUF",
+      "revision": "89b785438c8901d4635e42f50480ba5985a1bbf1",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "chat",
+        "vision",
+        "audio"
+      ],
+      "context_max": 32768,
+      "kv_gb_per_1k_ctx": 0.057,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Qwen2.5-Omni-7B-Q4_K_M.gguf",
+          "sha256": "09883dff531dc56923a041c9c99c7c779e26ffde32caa83adeeb7502ec3b50fe",
+          "size_gb": 4.683
+        },
+        "Q8_0": {
+          "file": "Qwen2.5-Omni-7B-Q8_0.gguf",
+          "sha256": "2cb12eb661bc8db5536463dd2dadd4a25c8bd42a2346bc1cefddd2e2245f641a",
+          "size_gb": 8.099
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-Qwen2.5-Omni-7B-Q8_0.gguf",
+        "sha256": "4a7bc5478a2ec8c5d186d63532eb22e75b79ba75ec3c0ce821676157318ef4ad",
+        "size_gb": 1.548
+      }
+    },
+    {
+      "id": "sd-turbo",
+      "name": "SD-Turbo (fast, 512px)",
+      "kind": "image",
+      "params_b": 0.9,
+      "repo": "Green-Sky/SD-Turbo-GGUF",
+      "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+      "license": "Stability AI Non-Commercial Research Community License",
+      "license_url": "https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md",
+      "tags": [
+        "image"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q8_0": {
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580",
+          "size_gb": 2.024
+        }
+      },
+      "components": [],
+      "work_gb": 1.0,
+      "defaults": {
+        "main": "model",
+        "width": 512,
+        "height": 512,
+        "steps": 1,
+        "cfg_scale": 1.0
+      }
+    },
+    {
+      "id": "flux1-schnell",
+      "name": "FLUX.1 schnell (high quality)",
+      "kind": "image",
+      "params_b": 12.0,
+      "repo": "second-state/FLUX.1-schnell-GGUF",
+      "revision": "8c45a2ba25e2d02bd34230989fb54983f39e44ec",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "image"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q4_0": {
+          "file": "flux1-schnell-Q4_0.gguf",
+          "sha256": "b338a7ab5c81600a54be46c4cf950edb3761a52ae163e419beafd250976fb566",
+          "size_gb": 6.689
+        },
+        "Q8_0": {
+          "file": "flux1-schnell-Q8_0.gguf",
+          "sha256": "7ccdc568ef7d33f37943302c80450a94a59370b48d62440fc2e5a3bf8520bf35",
+          "size_gb": 12.634
+        }
+      },
+      "components": [
+        {
+          "role": "vae",
+          "file": "ae.safetensors",
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "size_gb": 0.335
+        },
+        {
+          "role": "clip_l",
+          "file": "clip_l-Q8_0.gguf",
+          "sha256": "59cbe002c3e75d2b89d38787e81d12fb4e512fd76176884c470737ad87a1d309",
+          "size_gb": 0.131
+        },
+        {
+          "role": "t5xxl",
+          "file": "t5xxl-Q4_K.gguf",
+          "sha256": "8b465525114b89011303969a035ef7e335821f13a32c4f31212912fb6511e128",
+          "size_gb": 2.753
+        }
+      ],
+      "work_gb": 2.0,
+      "defaults": {
+        "main": "diffusion_model",
+        "width": 768,
+        "height": 768,
+        "steps": 4,
+        "cfg_scale": 1.0
+      }
+    },
+    {
+      "id": "wan2.1-t2v-1.3b",
+      "name": "Wan2.1 T2V 1.3B (text to video)",
+      "kind": "video",
+      "params_b": 1.3,
+      "repo": "samuelchristlie/Wan2.1-T2V-1.3B-GGUF",
+      "revision": "5a512b15fc35d1b67a074cfe55a591be9e9ef9b5",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "video"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Wan2.1-T2V-1.3B-Q4_K_M.gguf",
+          "sha256": "1e22a68152e6c4432524c61c78185efa35e6b305483ceb5fe238b2d51964cea7",
+          "size_gb": 0.983
+        },
+        "Q8_0": {
+          "file": "Wan2.1-T2V-1.3B-Q8_0.gguf",
+          "sha256": "30a44f695b4275a915810120360d6fd26152ec303c2226b5152ec33a93c380e4",
+          "size_gb": 1.536
+        }
+      },
+      "components": [
+        {
+          "role": "vae",
+          "file": "split_files/vae/wan_2.1_vae.safetensors",
+          "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b",
+          "size_gb": 0.254,
+          "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+          "revision": "123acf1cc74bccbb9bfff8ac1ee72edc08c2341d"
+        },
+        {
+          "role": "t5xxl",
+          "file": "umt5-xxl-encoder-Q4_K_M.gguf",
+          "sha256": "17cf97a5bbbc60a646d6105b832b6f657ce904a8a1ad970e4b59df0c67584a40",
+          "size_gb": 3.655,
+          "repo": "city96/umt5-xxl-encoder-gguf",
+          "revision": "b535255bee98c2b0a59ea7c0ae2dcd0c6657b3b7"
+        }
+      ],
+      "work_gb": 4.0,
+      "defaults": {
+        "main": "diffusion_model",
+        "width": 480,
+        "height": 272,
+        "steps": 20,
+        "cfg_scale": 6.0,
+        "flow_shift": 3.0,
+        "frames": 33,
+        "fps": 16
+      }
+    },
+    {
+      "id": "whisper-base",
+      "name": "Whisper base (fast)",
+      "kind": "stt",
+      "params_b": 0.074,
+      "repo": "ggerganov/whisper.cpp",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "license": "MIT",
+      "license_url": "https://github.com/openai/whisper/blob/main/LICENSE",
+      "tags": [
+        "stt"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "F16": {
+          "file": "ggml-base.bin",
+          "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+          "size_gb": 0.148
+        }
+      },
+      "work_gb": 0.3
+    },
+    {
+      "id": "whisper-small",
+      "name": "Whisper small (better)",
+      "kind": "stt",
+      "params_b": 0.244,
+      "repo": "ggerganov/whisper.cpp",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "license": "MIT",
+      "license_url": "https://github.com/openai/whisper/blob/main/LICENSE",
+      "tags": [
+        "stt"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "F16": {
+          "file": "ggml-small.bin",
+          "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+          "size_gb": 0.488
+        }
+      },
+      "work_gb": 0.3
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "name": "Whisper large-v3 turbo (best)",
+      "kind": "stt",
+      "params_b": 0.809,
+      "repo": "ggerganov/whisper.cpp",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "license": "MIT",
+      "license_url": "https://github.com/openai/whisper/blob/main/LICENSE",
+      "tags": [
+        "stt"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q5_0": {
+          "file": "ggml-large-v3-turbo-q5_0.bin",
+          "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+          "size_gb": 0.574
+        }
+      },
+      "work_gb": 0.3
+    },
+    {
+      "id": "qwen3-tts-1.7b",
+      "name": "Qwen3-TTS 1.7B (10 languages)",
+      "kind": "tts",
+      "params_b": 1.7,
+      "repo": "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF",
+      "revision": "ca27d74bc954b73dadab5b71ca265d87fc861a7c",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "tags": [
+        "tts"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q4_K_M": {
+          "file": "Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+          "sha256": "8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129",
+          "size_gb": 1.036
+        },
+        "Q8_0": {
+          "file": "Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+          "sha256": "ac7931aeb2e7aad1a6ed6602d353a5679c9d096b18ce8204ac730a8408d572e1",
+          "size_gb": 1.848
+        }
+      },
+      "mmproj": {
+        "file": "mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "sha256": "6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2",
+        "size_gb": 0.446
+      },
+      "work_gb": 0.5
     }
   ]
 }

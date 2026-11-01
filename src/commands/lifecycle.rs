@@ -4,9 +4,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use console::style;
 
-use crate::core::config::Config;
+use crate::core::config::{Capability, Config};
 use crate::core::project::{Project, State};
-use crate::core::{engine, lock, process, secrets};
+use crate::core::{gateway, lock, process, secrets};
 use crate::error::{fail_hint, CliError, Exit};
 use crate::ui;
 
@@ -101,22 +101,29 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         );
     };
     let changed = lock::changed(&lk, &lock::section_hashes(cfg, &p.system_prompt(cfg)));
-    if changed.iter().any(|s| s == "model" || s == "runtime") {
+    if changed.iter().any(|s| lock::BUILD_SECTIONS.contains(&s.as_str())) {
         return fail_hint(
             Exit::Runtime,
-            "the model or runtime settings changed since the last build",
-            "run `yourai rebuild` to apply them",
+            format!("{} changed since the last build", changed.join(", ")),
+            "run `yourai rebuild` to apply the changes",
         );
     }
-    let exe = PathBuf::from(&lk.engine_exe);
+    let engine_exe = PathBuf::from(&lk.engine_exe);
     let model = PathBuf::from(&lk.model_path);
-    if !exe.is_file() || !model.is_file() {
+    let mut needed: Vec<PathBuf> = vec![engine_exe, model];
+    if !lk.mmproj_path.is_empty() {
+        needed.push(PathBuf::from(&lk.mmproj_path));
+    }
+    needed.extend(lk.engines.values().map(|e| PathBuf::from(&e.exe)));
+    needed.extend(lk.models.values().flat_map(|m| m.files.values().map(PathBuf::from)));
+    if let Some(missing) = needed.iter().find(|f| !f.is_file()) {
         return fail_hint(
             Exit::Runtime,
-            "the engine or model file is missing from ~/.yourai",
+            format!("{} is missing from ~/.yourai", missing.display()),
             "run `yourai build`",
         );
     }
+    gateway::kill_leftovers(p);
     if !process::port_free(&cfg.server.host, cfg.server.port) {
         let alt = process::next_free_port(&cfg.server.host, cfg.server.port + 1).unwrap_or(cfg.server.port + 1);
         return Err(CliError::new(
@@ -135,8 +142,13 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         ));
     }
 
-    let key_file = api_key_file(p, cfg)?;
-    let args = engine::server_args(cfg, &model, key_file.as_deref());
+    api_key_file(p, cfg)?;
+    let exe = std::env::current_exe()?;
+    let args = vec![
+        "--project".to_string(),
+        p.root.display().to_string(),
+        "__gateway".to_string(),
+    ];
     let log = p.log_path();
     let log_start = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
     let pid = process::spawn_detached(&exe, &args, &log, &p.root)?;
@@ -201,6 +213,23 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         ui::info(format!("Chat in your browser: {url}"));
     }
     ui::info(format!("OpenAI-compatible API: {url}/v1"));
+    let extras: Vec<&str> = cfg
+        .enabled_caps()
+        .into_iter()
+        .map(|c| match c {
+            Capability::Image => "`yourai image`",
+            Capability::Video => "`yourai video`",
+            Capability::SpeechToText => "`yourai transcribe`",
+            Capability::TextToSpeech => "`yourai speak`",
+        })
+        .collect();
+    if !extras.is_empty() {
+        ui::info(format!(
+            "Also ready: {} (engines load on first use, unload after {} idle minutes)",
+            extras.join(", "),
+            cfg.server.idle_unload_minutes
+        ));
+    }
     if cfg.server.require_api_key {
         ui::info("API key required: send `Authorization: Bearer <key>` (key is in .yourai/secrets.toml)");
     }
@@ -229,13 +258,27 @@ pub fn start(p: &Project) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn stop_process(p: &Project, s: &State) {
+pub fn stop_process(p: &Project, s: &State) {
     if let Some(pid) = s.pid {
         if process::is_ours(pid, s.pid_start_time) {
             process::stop(pid);
         }
     }
+    gateway::kill_leftovers(p);
     let _ = std::fs::remove_file(p.state_dir().join("api-keys.txt"));
+}
+
+fn engine_statuses(cfg: &Config, p: &Project) -> Option<Vec<gateway::EngineStatus>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let mut rb = client.get(format!("{}/yourai/status", cfg.server.local_url()));
+    if let Some(k) = secrets::api_key(&p.root) {
+        rb = rb.bearer_auth(k);
+    }
+    let v: serde_json::Value = rb.send().ok()?.error_for_status().ok()?.json().ok()?;
+    serde_json::from_value(v.get("engines")?.clone()).ok()
 }
 
 pub fn stop(p: &Project) -> anyhow::Result<()> {
@@ -327,9 +370,11 @@ pub fn status(p: &Project) -> anyhow::Result<()> {
         format!("{}  (API: {}/v1)", cfg.server.local_url(), cfg.server.local_url()),
     ]);
     if s.state == "running" {
+        let engines = engine_statuses(&cfg, p).unwrap_or_default();
         if let Some(pid) = s.pid {
             t.add_row(vec!["Process".to_string(), format!("pid {pid}")]);
-            if let Some(mem) = process::memory(pid) {
+            let chat = engines.iter().find(|e| e.name == "chat");
+            if let Some(mem) = chat.and_then(|e| e.memory_bytes).or_else(|| process::memory(pid)) {
                 t.add_row(vec!["Memory (RAM)".to_string(), ui::gb(mem as f64 / 1e9)]);
             }
         }
@@ -347,6 +392,23 @@ pub fn status(p: &Project) -> anyhow::Result<()> {
             None => style("not responding").red().to_string(),
         };
         t.add_row(vec!["Health".to_string(), h]);
+        for e in engines {
+            if !e.enabled || e.name == "chat" {
+                continue;
+            }
+            let state = match (e.running, e.memory_bytes) {
+                (true, Some(m)) => format!("loaded, {} RAM, port {}", ui::gb(m as f64 / 1e9), e.port.unwrap_or(0)),
+                (true, None) => format!("loaded, port {}", e.port.unwrap_or(0)),
+                (false, _) if e.name == "text_to_speech" => "runs per request".into(),
+                (false, _) => "ready (loads on first use)".into(),
+            };
+            t.add_row(vec![e.name.replace('_', " "), format!("{} — {state}", e.model)]);
+        }
+    } else {
+        for c in cfg.enabled_caps() {
+            let m = cfg.cap(c);
+            t.add_row(vec![c.key().replace('_', " "), m.model.to_string()]);
+        }
     }
     if let Some(l) = &lk {
         let changed = lock::changed(l, &lock::section_hashes(&cfg, &p.system_prompt(&cfg)));

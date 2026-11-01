@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::config::Config;
+use super::config::{Capability, Config};
 
 /// What `yourai build` produced, plus hashes of the config it was built from.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -17,12 +17,50 @@ pub struct Lock {
     pub model_quant: String,
     pub model_path: String,
     pub model_sha256: String,
+    /// Projector for vision and omni chat models.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mmproj_path: String,
+    /// Engine name (`sd-server`, `whisper-server`, `llama-tts`) -> installed build.
+    #[serde(default)]
+    pub engines: BTreeMap<String, EngineLock>,
+    /// Capability key (`image`, `speech_to_text`, ...) -> its model.
+    #[serde(default)]
+    pub models: BTreeMap<String, ModelLock>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct EngineLock {
+    pub version: String,
+    pub key: String,
+    pub exe: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ModelLock {
+    pub id: String,
+    pub quant: String,
+    pub sha256: String,
+    /// Engine argument role (`model`, `diffusion_model`, `vae`, `mmproj`, ...) -> path.
+    pub files: BTreeMap<String, String>,
+    /// The role of the main weights in `files`.
+    pub main: String,
+    #[serde(default)]
+    pub defaults: serde_json::Value,
+}
+
+impl ModelLock {
+    pub fn main_path(&self) -> Option<&str> {
+        self.files.get(&self.main).map(String::as_str)
+    }
 }
 
 fn hash<T: Serialize>(v: &T) -> String {
     let json = serde_json::to_vec(v).expect("serializable");
     hex::encode(Sha256::digest(&json))
 }
+
+/// Sections that need downloads or engine installs when they change.
+pub const BUILD_SECTIONS: [&str; 6] = ["model", "runtime", "image", "video", "speech_to_text", "text_to_speech"];
 
 /// Hashes each part of the config that changes what rebuild must do.
 pub fn section_hashes(cfg: &Config, system_prompt_text: &str) -> BTreeMap<String, String> {
@@ -32,6 +70,15 @@ pub fn section_hashes(cfg: &Config, system_prompt_text: &str) -> BTreeMap<String
     m.insert("generation".into(), hash(&cfg.generation));
     m.insert("server".into(), hash(&cfg.server));
     m.insert("system_prompt".into(), hash(&system_prompt_text));
+    for c in Capability::ALL {
+        let v = match c {
+            Capability::Image => hash(&cfg.image),
+            Capability::Video => hash(&cfg.video),
+            Capability::SpeechToText => hash(&cfg.speech_to_text),
+            Capability::TextToSpeech => hash(&cfg.text_to_speech),
+        };
+        m.insert(c.key().into(), v);
+    }
     m
 }
 
@@ -76,5 +123,17 @@ mod tests {
         c3.model.quant = "Q8_0".into();
         let ch = changed(&lock, &section_hashes(&c3, "bye"));
         assert_eq!(ch, vec!["model", "system_prompt"]);
+
+        let mut c4 = cfg.clone();
+        c4.image.steps = 4;
+        assert_eq!(changed(&lock, &section_hashes(&c4, "hi")), vec!["image"]);
+    }
+
+    #[test]
+    fn v1_lock_loads() {
+        let text = r#"{"sections":{},"engine_version":"b1","engine_key":"k","engine_exe":"/e",
+            "model_id":"m","model_quant":"Q4_K_M","model_path":"/m","model_sha256":"x"}"#;
+        let l: Lock = serde_json::from_str(text).unwrap();
+        assert!(l.engines.is_empty() && l.models.is_empty());
     }
 }

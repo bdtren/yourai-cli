@@ -1,7 +1,7 @@
 class Yourai < Formula
   desc "Build and run your own local AI"
   homepage "https://yourai.bdtren.com"
-  license "MIT"
+  license "Apache-2.0"
 
   livecheck do
     skip "Platform-specific URLs; check https://yourai.bdtren.com/cli/latest.txt"

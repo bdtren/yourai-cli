@@ -4,7 +4,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CliError, Exit};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// Tools the chat agent can use. Media tools also need their capability enabled.
+pub const AGENT_TOOLS: [&str; 7] = [
+    "list_files",
+    "read_file",
+    "write_file",
+    "generate_image",
+    "generate_video",
+    "speak",
+    "transcribe",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +28,16 @@ pub struct Config {
     pub runtime: RuntimeCfg,
     pub generation: GenerationCfg,
     pub server: ServerCfg,
+    #[serde(default)]
+    pub agent: AgentCfg,
+    #[serde(default)]
+    pub image: ImageCfg,
+    #[serde(default)]
+    pub video: VideoCfg,
+    #[serde(default)]
+    pub speech_to_text: SttCfg,
+    #[serde(default)]
+    pub text_to_speech: TtsCfg,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -29,6 +50,168 @@ pub struct ModelCfg {
     pub repo: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,
+    /// Image/audio projector: "auto" (from the catalog), "" (none), or a file in `repo`.
+    #[serde(default = "auto")]
+    pub mmproj: String,
+}
+
+fn auto() -> String {
+    "auto".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct AgentCfg {
+    pub enabled: bool,
+    /// Folder the agent may read (and write, if allowed), relative to the project.
+    pub workspace: String,
+    pub allow_write: bool,
+    /// Tools to offer; empty = every tool whose capability is enabled.
+    pub tools: Vec<String>,
+}
+
+impl Default for AgentCfg {
+    fn default() -> Self {
+        AgentCfg {
+            enabled: false,
+            workspace: ".".into(),
+            allow_write: false,
+            tools: Vec::new(),
+        }
+    }
+}
+
+/// `0` in a size or step setting means "use the model's default".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields, default)]
+pub struct ImageCfg {
+    pub enabled: bool,
+    pub model: String,
+    pub quant: String,
+    pub width: u32,
+    pub height: u32,
+    pub steps: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields, default)]
+pub struct VideoCfg {
+    pub enabled: bool,
+    pub model: String,
+    pub quant: String,
+    pub width: u32,
+    pub height: u32,
+    pub frames: u32,
+    pub fps: u32,
+    pub steps: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct SttCfg {
+    pub enabled: bool,
+    pub model: String,
+    pub quant: String,
+    /// "auto" or a language code like "en".
+    pub language: String,
+}
+
+impl Default for SttCfg {
+    fn default() -> Self {
+        SttCfg {
+            enabled: false,
+            model: String::new(),
+            quant: String::new(),
+            language: "auto".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct TtsCfg {
+    pub enabled: bool,
+    pub model: String,
+    pub quant: String,
+    pub language: String,
+    /// Optional voice sample file (relative to the project) to clone.
+    pub speaker_file: String,
+}
+
+impl Default for TtsCfg {
+    fn default() -> Self {
+        TtsCfg {
+            enabled: false,
+            model: String::new(),
+            quant: String::new(),
+            language: "en".into(),
+            speaker_file: String::new(),
+        }
+    }
+}
+
+/// Optional capabilities next to the always-on chat model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Capability {
+    Image,
+    Video,
+    SpeechToText,
+    TextToSpeech,
+}
+
+impl Capability {
+    pub const ALL: [Capability; 4] = [
+        Capability::Image,
+        Capability::Video,
+        Capability::SpeechToText,
+        Capability::TextToSpeech,
+    ];
+
+    /// Name of the yourai.toml table and lock entry.
+    pub fn key(self) -> &'static str {
+        match self {
+            Capability::Image => "image",
+            Capability::Video => "video",
+            Capability::SpeechToText => "speech_to_text",
+            Capability::TextToSpeech => "text_to_speech",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Capability::Image => "Image generation",
+            Capability::Video => "Video generation",
+            Capability::SpeechToText => "Speech to text",
+            Capability::TextToSpeech => "Text to speech",
+        }
+    }
+
+    pub fn kind(self) -> super::catalog::Kind {
+        use super::catalog::Kind;
+        match self {
+            Capability::Image => Kind::Image,
+            Capability::Video => Kind::Video,
+            Capability::SpeechToText => Kind::Stt,
+            Capability::TextToSpeech => Kind::Tts,
+        }
+    }
+
+    pub fn engine(self) -> &'static str {
+        use super::catalog::{LLAMA, SD, WHISPER};
+        match self {
+            Capability::Image | Capability::Video => SD,
+            Capability::SpeechToText => WHISPER,
+            Capability::TextToSpeech => LLAMA,
+        }
+    }
+}
+
+/// The model chosen for one capability.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapModel<'a> {
+    pub enabled: bool,
+    pub model: &'a str,
+    pub quant: &'a str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -57,6 +240,13 @@ pub struct ServerCfg {
     pub port: u16,
     pub web_ui: bool,
     pub require_api_key: bool,
+    /// Stop image, video, and speech engines after this many idle minutes, 0 = never.
+    #[serde(default = "default_idle")]
+    pub idle_unload_minutes: u32,
+}
+
+fn default_idle() -> u32 {
+    10
 }
 
 impl ServerCfg {
@@ -82,12 +272,89 @@ fn invalid(msg: impl Into<String>) -> anyhow::Error {
 }
 
 impl Config {
+    /// Parses and validates. Schema 1 files load with every capability disabled.
     pub fn parse(text: &str) -> anyhow::Result<Config> {
-        let cfg: Config = toml::from_str(text).map_err(|e| invalid(format!("yourai.toml is invalid:\n{e}")))?;
+        let mut cfg: Config = toml::from_str(text).map_err(|e| invalid(format!("yourai.toml is invalid:\n{e}")))?;
+        if cfg.schema_version == 1 {
+            cfg.schema_version = SCHEMA_VERSION;
+        }
         cfg.validate()?;
         Ok(cfg)
     }
 
+    pub fn cap(&self, c: Capability) -> CapModel<'_> {
+        let (enabled, model, quant) = match c {
+            Capability::Image => (self.image.enabled, &self.image.model, &self.image.quant),
+            Capability::Video => (self.video.enabled, &self.video.model, &self.video.quant),
+            Capability::SpeechToText => (
+                self.speech_to_text.enabled,
+                &self.speech_to_text.model,
+                &self.speech_to_text.quant,
+            ),
+            Capability::TextToSpeech => (
+                self.text_to_speech.enabled,
+                &self.text_to_speech.model,
+                &self.text_to_speech.quant,
+            ),
+        };
+        CapModel { enabled, model, quant }
+    }
+
+    pub fn enabled_caps(&self) -> Vec<Capability> {
+        Capability::ALL.into_iter().filter(|c| self.cap(*c).enabled).collect()
+    }
+
+    /// Agent tools that are on: the configured list (or all), minus tools whose
+    /// capability is off and `write_file` unless writing is allowed.
+    pub fn agent_tools(&self) -> Vec<&'static str> {
+        if !self.agent.enabled {
+            return Vec::new();
+        }
+        AGENT_TOOLS
+            .into_iter()
+            .filter(|t| self.agent.tools.is_empty() || self.agent.tools.iter().any(|x| x == t))
+            .filter(|t| match *t {
+                "write_file" => self.agent.allow_write,
+                "generate_image" => self.image.enabled,
+                "generate_video" => self.video.enabled,
+                "speak" => self.text_to_speech.enabled,
+                "transcribe" => self.speech_to_text.enabled,
+                _ => true,
+            })
+            .collect()
+    }
+}
+
+/// Upgrades an older yourai.toml to the current schema, keeping the user's comments
+/// and values. Returns `None` when the text is already current.
+pub fn migrate(text: &str) -> anyhow::Result<Option<String>> {
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| invalid(format!("yourai.toml is not valid TOML:\n{e}")))?;
+    if doc.get("schema_version").and_then(|v| v.as_integer()) != Some(1) {
+        return Ok(None);
+    }
+    let cfg = Config::parse(text)?;
+    doc["schema_version"] = toml_edit::value(SCHEMA_VERSION as i64);
+    if let Some(server) = doc.get_mut("server").and_then(|s| s.as_table_mut()) {
+        if !server.contains_key("idle_unload_minutes") {
+            server.insert("idle_unload_minutes", toml_edit::value(10));
+            if let Some(mut k) = server.key_mut("idle_unload_minutes") {
+                k.leaf_decor_mut()
+                    .set_prefix("# Stop image, video, and speech engines after this many idle minutes, 0 = never\n");
+            }
+        }
+    }
+    let mut out = doc.to_string();
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&render_capabilities(&cfg));
+    Config::parse(&out)?;
+    Ok(Some(out))
+}
+
+impl Config {
     pub fn load(path: &Path) -> anyhow::Result<Config> {
         let text =
             std::fs::read_to_string(path).map_err(|e| invalid(format!("cannot read {}: {e}", path.display())))?;
@@ -154,7 +421,52 @@ impl Config {
                 "a custom model needs model.repo and a model.file ending in .gguf",
             ));
         }
+        if self.model.mmproj != "auto" && !self.model.mmproj.is_empty() && !self.model.mmproj.ends_with(".gguf") {
+            return Err(invalid("model.mmproj must be \"auto\", \"\", or a .gguf file name"));
+        }
         super::paths::inside(Path::new("."), &self.system_prompt).map_err(|e| invalid(e.to_string()))?;
+        super::paths::inside(Path::new("."), &self.agent.workspace)
+            .map_err(|e| invalid(format!("agent.workspace: {e}")))?;
+        for t in &self.agent.tools {
+            if !AGENT_TOOLS.contains(&t.as_str()) {
+                return Err(invalid(format!(
+                    "agent.tools: unknown tool \"{t}\" (choose from {})",
+                    AGENT_TOOLS.join(", ")
+                )));
+            }
+        }
+        for c in Capability::ALL {
+            let m = self.cap(c);
+            if m.enabled && m.model.is_empty() {
+                return Err(invalid(format!(
+                    "{}.enabled is true but {}.model is empty",
+                    c.key(),
+                    c.key()
+                )));
+            }
+        }
+        for (key, v) in [
+            ("image.width", self.image.width),
+            ("image.height", self.image.height),
+            ("video.width", self.video.width),
+            ("video.height", self.video.height),
+        ] {
+            if v != 0 && (v % 16 != 0 || !(64..=2048).contains(&v)) {
+                return Err(invalid(format!(
+                    "{key} must be 0 (model default) or a multiple of 16 between 64 and 2048"
+                )));
+            }
+        }
+        let lang = |l: &str| l.len() <= 8 && l.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
+        if !lang(&self.speech_to_text.language) || !lang(&self.text_to_speech.language) {
+            return Err(invalid(
+                "languages must be a code like \"en\" (or \"auto\" for speech_to_text)",
+            ));
+        }
+        if !self.text_to_speech.speaker_file.is_empty() {
+            super::paths::inside(Path::new("."), &self.text_to_speech.speaker_file)
+                .map_err(|e| invalid(format!("text_to_speech.speaker_file: {e}")))?;
+        }
         Ok(())
     }
 }
@@ -183,6 +495,8 @@ system_prompt = "{prompt}"
 id = "{model_id}"
 # Compression level. Q4_K_M is the best balance; Q5_K_M and Q8_0 are larger and more accurate.
 quant = "{quant}"
+# Image/audio input for vision and omni models: "auto" (from the catalog) or "" (off)
+mmproj = {mmproj}
 {custom}
 [runtime]
 engine = "llamacpp"
@@ -207,13 +521,16 @@ port = {port}
 # Browser chat page at http://{host_url}:{port}
 web_ui = {web_ui}
 require_api_key = {req_key}
-"#,
+# Stop image, video, and speech engines after this many idle minutes, 0 = never
+idle_unload_minutes = {idle}
+{caps}"#,
         schema = cfg.schema_version,
         name = cfg.name,
         goal = cfg.goal,
         prompt = cfg.system_prompt,
         model_id = cfg.model.id,
         quant = cfg.model.quant,
+        mmproj = q(&cfg.model.mmproj),
         custom = custom,
         gpu_layers = cfg.runtime.gpu_layers,
         ctx = cfg.runtime.context_length,
@@ -230,7 +547,98 @@ require_api_key = {req_key}
         port = cfg.server.port,
         web_ui = cfg.server.web_ui,
         req_key = cfg.server.require_api_key,
+        idle = cfg.server.idle_unload_minutes,
+        caps = render_capabilities(cfg),
     )
+}
+
+/// The capability tables, shared by `render` and the v1 -> v2 upgrade.
+fn render_capabilities(cfg: &Config) -> String {
+    let tools = cfg.agent.tools.iter().map(|t| q(t)).collect::<Vec<_>>().join(", ");
+    format!(
+        r#"
+[agent]
+# Let `yourai chat` read files in the workspace and use the tools below.
+enabled = {a_on}
+# Folder the agent can see, relative to this project.
+workspace = {a_ws}
+# Allow the agent to create or change files (it always asks first).
+allow_write = {a_write}
+# Empty = all tools whose capability is enabled. Choose from:
+# list_files, read_file, write_file, generate_image, generate_video, speak, transcribe
+tools = [{tools}]
+
+[image]
+# Create images from text with `yourai image` or at /v1/images/generations.
+enabled = {i_on}
+model = {i_model}
+quant = {i_quant}
+# 0 = the model's default
+width = {i_w}
+height = {i_h}
+steps = {i_steps}
+
+[video]
+# Create short videos from text with `yourai video`. Needs a strong GPU or 16 GB+ Apple Silicon.
+enabled = {v_on}
+model = {v_model}
+quant = {v_quant}
+# 0 = the model's default
+width = {v_w}
+height = {v_h}
+frames = {v_frames}
+fps = {v_fps}
+steps = {v_steps}
+
+[speech_to_text]
+# Turn recordings into text with `yourai transcribe` or at /v1/audio/transcriptions.
+enabled = {s_on}
+model = {s_model}
+quant = {s_quant}
+# "auto" or a language code like "en"
+language = {s_lang}
+
+[text_to_speech]
+# Read text aloud with `yourai speak` or at /v1/audio/speech.
+enabled = {t_on}
+model = {t_model}
+quant = {t_quant}
+language = {t_lang}
+# Optional voice sample (WAV) to imitate, relative to this project
+speaker_file = {t_spk}
+"#,
+        a_on = cfg.agent.enabled,
+        a_ws = q(&cfg.agent.workspace),
+        a_write = cfg.agent.allow_write,
+        i_on = cfg.image.enabled,
+        i_model = q(&cfg.image.model),
+        i_quant = q(&cfg.image.quant),
+        i_w = cfg.image.width,
+        i_h = cfg.image.height,
+        i_steps = cfg.image.steps,
+        v_on = cfg.video.enabled,
+        v_model = q(&cfg.video.model),
+        v_quant = q(&cfg.video.quant),
+        v_w = cfg.video.width,
+        v_h = cfg.video.height,
+        v_frames = cfg.video.frames,
+        v_fps = cfg.video.fps,
+        v_steps = cfg.video.steps,
+        s_on = cfg.speech_to_text.enabled,
+        s_model = q(&cfg.speech_to_text.model),
+        s_quant = q(&cfg.speech_to_text.quant),
+        s_lang = q(&cfg.speech_to_text.language),
+        t_on = cfg.text_to_speech.enabled,
+        t_model = q(&cfg.text_to_speech.model),
+        t_quant = q(&cfg.text_to_speech.quant),
+        t_lang = q(&cfg.text_to_speech.language),
+        t_spk = q(&cfg.text_to_speech.speaker_file),
+    )
+}
+
+/// A TOML string literal.
+fn q(s: &str) -> String {
+    toml_edit::Value::from(s).to_string().trim().to_string()
 }
 
 fn fmt_f(v: f64) -> String {
@@ -244,7 +652,10 @@ fn fmt_f(v: f64) -> String {
 /// What has to happen after a key changes.
 pub fn change_impact(key: &str) -> &'static str {
     match key.split('.').next().unwrap_or("") {
-        "model" | "runtime" => "Engine or model change: run `yourai rebuild` (may download files).",
+        "model" | "runtime" | "image" | "video" | "speech_to_text" | "text_to_speech" => {
+            "Engine or model change: run `yourai rebuild` (may download files)."
+        }
+        "agent" => "Used the next time you run `yourai chat`.",
         "generation" | "server" | "system_prompt" | "name" | "goal" => {
             "Restart needed: run `yourai rebuild` (fast, nothing is downloaded)."
         }
@@ -255,7 +666,7 @@ pub fn change_impact(key: &str) -> &'static str {
 #[cfg(test)]
 pub fn sample() -> Config {
     Config {
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
         name: "my-ai".into(),
         goal: "chat".into(),
         system_prompt: "prompts/system.md".into(),
@@ -264,6 +675,7 @@ pub fn sample() -> Config {
             quant: "Q4_K_M".into(),
             repo: String::new(),
             file: String::new(),
+            mmproj: "auto".into(),
         },
         runtime: RuntimeCfg {
             engine: "llamacpp".into(),
@@ -281,9 +693,46 @@ pub fn sample() -> Config {
             port: 8080,
             web_ui: true,
             require_api_key: false,
+            idle_unload_minutes: 10,
         },
+        agent: AgentCfg::default(),
+        image: ImageCfg::default(),
+        video: VideoCfg::default(),
+        speech_to_text: SttCfg::default(),
+        text_to_speech: TtsCfg::default(),
     }
 }
+
+/// A schema 1 file as written by yourai 0.0.1.
+#[cfg(test)]
+pub const V1_SAMPLE: &str = r#"# YourAI project configuration.
+schema_version = 1
+name = "old-ai"
+goal = "chat"
+system_prompt = "prompts/system.md"
+
+[model]
+# my favourite model
+id = "qwen2.5-0.5b"
+quant = "Q4_K_M"
+
+[runtime]
+engine = "llamacpp"
+gpu_layers = "auto"
+context_length = 4096
+threads = 0
+
+[generation]
+temperature = 0.7
+top_p = 0.9
+max_tokens = 1024
+
+[server]
+host = "127.0.0.1"
+port = 8080
+web_ui = true
+require_api_key = false
+"#;
 
 #[cfg(test)]
 mod tests {
@@ -322,6 +771,74 @@ mod tests {
         let mut cfg = sample();
         cfg.system_prompt = "../secret".into();
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn render_roundtrips_with_capabilities() {
+        let mut cfg = sample();
+        cfg.agent.enabled = true;
+        cfg.agent.tools = vec!["read_file".into(), "speak".into()];
+        cfg.image = ImageCfg {
+            enabled: true,
+            model: "sd-turbo".into(),
+            quant: "Q8_0".into(),
+            width: 512,
+            height: 512,
+            steps: 2,
+        };
+        cfg.text_to_speech.enabled = true;
+        cfg.text_to_speech.model = "qwen3-tts-1.7b".into();
+        cfg.text_to_speech.speaker_file = "voice \"me\".wav".into();
+        let parsed = Config::parse(&render(&cfg)).unwrap();
+        assert_eq!(parsed, cfg);
+        assert_eq!(parsed.agent_tools(), vec!["read_file", "speak"]);
+        assert_eq!(parsed.enabled_caps(), vec![Capability::Image, Capability::TextToSpeech]);
+    }
+
+    #[test]
+    fn v1_loads_with_capabilities_off() {
+        let cfg = Config::parse(V1_SAMPLE).unwrap();
+        assert_eq!(cfg.schema_version, SCHEMA_VERSION);
+        assert_eq!(cfg.model.mmproj, "auto");
+        assert_eq!(cfg.server.idle_unload_minutes, 10);
+        assert!(cfg.enabled_caps().is_empty());
+        assert!(cfg.agent_tools().is_empty());
+    }
+
+    #[test]
+    fn v1_migrates_in_place() {
+        let out = migrate(V1_SAMPLE).unwrap().expect("v1 needs upgrading");
+        assert!(out.contains("# my favourite model"));
+        assert!(out.contains("schema_version = 2"));
+        assert!(out.contains("idle_unload_minutes = 10"));
+        assert!(out.contains("[text_to_speech]"));
+        let cfg = Config::parse(&out).unwrap();
+        assert_eq!(cfg.name, "old-ai");
+        assert!(migrate(&out).unwrap().is_none());
+        assert!(migrate(&render(&sample())).unwrap().is_none());
+    }
+
+    #[test]
+    fn capability_checks() {
+        let mut cfg = sample();
+        cfg.image.enabled = true;
+        assert!(cfg.validate().is_err(), "enabled without a model");
+        cfg.image.model = "sd-turbo".into();
+        assert!(cfg.validate().is_ok());
+        cfg.image.width = 500;
+        assert!(cfg.validate().is_err());
+        let mut cfg = sample();
+        cfg.agent.workspace = "../outside".into();
+        assert!(cfg.validate().is_err());
+        let mut cfg = sample();
+        cfg.agent.tools = vec!["rm_rf".into()];
+        assert!(cfg.validate().is_err());
+        let mut cfg = sample();
+        cfg.agent.enabled = true;
+        assert!(!cfg.agent_tools().contains(&"write_file"));
+        assert!(!cfg.agent_tools().contains(&"generate_image"));
+        cfg.agent.allow_write = true;
+        assert!(cfg.agent_tools().contains(&"write_file"));
     }
 
     #[test]

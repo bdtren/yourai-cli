@@ -63,6 +63,30 @@ impl Project {
         Config::load(&self.config_path())
     }
 
+    /// Rewrites an older yourai.toml in the current schema, keeping comments.
+    pub fn upgrade_config(&self) -> anyhow::Result<bool> {
+        let text = std::fs::read_to_string(self.config_path())?;
+        match config::migrate(&text)? {
+            Some(new) => {
+                std::fs::write(self.config_path(), new)?;
+                crate::ui::info(format!(
+                    "upgraded {CONFIG_FILE} to schema {} (new capabilities are off until you enable them)",
+                    config::SCHEMA_VERSION
+                ));
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    pub fn outputs_dir(&self) -> PathBuf {
+        self.root.join("outputs")
+    }
+
+    pub fn engines_path(&self) -> PathBuf {
+        self.state_dir().join("engines.json")
+    }
+
     pub fn state_dir(&self) -> PathBuf {
         self.root.join(".yourai")
     }
@@ -122,7 +146,7 @@ pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Resu
         .hint("choose another name or folder; existing files are never overwritten")
         .into());
     }
-    for sub in ["prompts", "data/docs", "scripts", ".yourai"] {
+    for sub in ["prompts", "data/docs", "outputs", "scripts", ".yourai"] {
         std::fs::create_dir_all(dir.join(sub))?;
     }
     std::fs::write(dir.join(CONFIG_FILE), config::render(cfg))?;

@@ -2,7 +2,7 @@
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI with a
 phone. The person and project are made up; the commands and output come from a real
-run of yourai v0.0.1 (some numbers are rounded).
+run of yourai v0.0.2 (some numbers are rounded).
 
 **Who:** Linh, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
@@ -15,7 +15,7 @@ works offline, and never sends her notes to anyone.
 
 ```console
 $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
-yourai: installing yourai v0.0.1 for aarch64-apple-darwin
+yourai: installing yourai v0.0.2 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
 yourai: added /Users/linh/.yourai/bin to PATH in /Users/linh/.zshrc (open a new terminal, or run: export PATH="/Users/linh/.yourai/bin:$PATH")
@@ -57,13 +57,18 @@ Checks
 What you can run
 • chat: Qwen2.5 14B Instruct with Q5_K_M (about 10.2 GB of memory)
 • code: Qwen2.5 Coder 14B Instruct with Q5_K_M (about 10.2 GB of memory)
+• vision: Gemma 3 12B Instruct with Q4_K_M (about 9.4 GB of memory)
+• image generation: FLUX.1 schnell (high quality) (about 12.3 GB of memory while working)
+• video generation: Wan2.1 T2V 1.3B (text to video) (about 9.3 GB of memory while working)
+• speech to text: Whisper small (better) (about 1.2 GB of memory while working)
+• text to speech: Qwen3-TTS 1.7B (10 languages) (about 2.4 GB of memory while working)
 Network was not tested. Run `yourai doctor --network` to check downloads.
 
 Next: yourai init
 ```
 
-Her Mac can run a 14B model. She decides to start tiny to try things out, and upgrade
-later (step 9).
+Her Mac can run a 14B model, and also create images, videos, and speech. She decides to
+start tiny to try things out, and add more later (steps 9 and 10).
 
 ## 3. Create the project: `yourai init`
 
@@ -79,12 +84,12 @@ Review
 ╞════════════════╪═══════════════════════════════════════╡
 │ Project folder ┆ study-buddy                           │
 │ Goal           ┆ Chat assistant                        │
+│ Capabilities   ┆ Read files (agent)                    │
 │ Model          ┆ Qwen2.5 0.5B Instruct (Small, 0.4 GB) │
 │ Quantization   ┆ Q5_K_M                                │
 │ Runtime        ┆ llama.cpp                             │
 │ Context length ┆ 4096 tokens                           │
 │ Interface      ┆ API + browser chat page               │
-│ Extra features ┆ No extras for now                     │
 │ Network access ┆ Only this computer (127.0.0.1)        │
 │ Port           ┆ 8080                                  │
 └────────────────┴───────────────────────────────────────┘
@@ -101,6 +106,10 @@ Nothing is downloaded yet. `yourai build` downloads after you confirm the model 
 Next: cd study-buddy && yourai build && yourai start
 ```
 
+With `--yes` and no `--capabilities`, only the agent is turned on: `yourai chat` can read
+files in the project, and nothing extra is downloaded. The interactive wizard instead
+offers every capability her Mac can run, with a model question for each one.
+
 The new folder:
 
 ```text
@@ -108,9 +117,10 @@ study-buddy/
 ├── yourai.toml          # all settings, with comments
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
+├── outputs/             # images, videos, and audio she creates (step 10)
 ├── scripts/             # start/stop helpers
 ├── README.md
-└── .gitignore
+└── .gitignore           # ignores .yourai/ and outputs/
 ```
 
 She makes it a study tutor by editing `prompts/system.md`:
@@ -176,15 +186,24 @@ It runs in the background, so she can close the terminal. She also bookmarks
 
 ```console
 $ yourai chat
-Chatting with study-buddy (qwen2.5-0.5b). Type /exit to quit, /reset to start over.
+Chatting with study-buddy (qwen2.5-0.5b). Type /help for commands, /exit to quit.
+Agent tools: list_files, read_file.
 you › Explain photosynthesis in one sentence.
 ai › Photosynthesis is the process by which plants, algae, and some bacteria turn
 light energy into chemical energy stored in glucose, using carbon dioxide and water.
+
+you › Read notes.txt and tell me the code word.
+⚙ read_file({"path":"notes.txt"})
+ai › The secret code word is PELICAN.
 
 you › /reset
 ✔ conversation cleared
 you › /exit
 ```
+
+The agent can only see the project folder (`agent.workspace`), never `.yourai/` where the
+secrets live, and it can also read PDFs. It cannot change files unless she sets
+`agent.allow_write = true`, and even then it shows a preview and asks first.
 
 ## 7. Use it from her own code (OpenAI-compatible API)
 
@@ -271,7 +290,58 @@ Downloading model Qwen2.5 7B Instruct…
 
 The old model stays in `~/.yourai/models`, so switching back is instant.
 
-## 10. Free memory for a game: `yourai pause` and `yourai resume`
+## 10. Pictures and speech: `yourai image`, `speak`, and `transcribe`
+
+For her biology slides she turns on image creation with the fast SD-Turbo model, and
+speech in both directions so she can listen to summaries and transcribe lectures:
+
+```console
+$ yourai config set image.enabled true
+$ yourai config set image.model sd-turbo
+$ yourai config set speech_to_text.enabled true
+$ yourai config set text_to_speech.enabled true
+$ yourai rebuild
+• changed: image, speech_to_text, text_to_speech
+• models or engines changed: checking downloads (files already present are reused)
+Engines
+✔ engine llama.cpp b12015 (macos-aarch64-metal) is installed
+✔ engine stable-diffusion.cpp master-1031-c6dfa9d (macos-aarch64-metal) installed
+✔ engine whisper.cpp v1.9.5 (macos-aarch64-metal) installed
+Models
+✔ model SD-Turbo (fast, 512px) downloaded and verified
+✔ model Whisper small (better) downloaded and verified
+✔ model Qwen3-TTS 1.7B (10 languages) downloaded and verified
+✔ study-buddy is running
+• Also ready: `yourai image`, `yourai transcribe`, `yourai speak` (engines load on first use, unload after 10 idle minutes)
+
+$ yourai image "a cute cartoon plant cell diagram"
+Creating the image (the first one also loads the model)…
+✔ saved outputs/images/a-cute-cartoon-plant-cell-diagram-1793519664.png
+• took 8s
+
+$ yourai speak "Photosynthesis turns light into chemical energy."
+✔ saved outputs/audio/photosynthesis-turns-light-into-chemical-energy-1793519668.wav (4.5s)
+
+$ yourai transcribe lecture-week3.wav --out lecture-week3.txt
+✔ wrote lecture-week3.txt (21.3s)
+```
+
+Everything still goes through port 8080, so apps can use `/v1/images/generations`,
+`/v1/audio/speech`, and `/v1/audio/transcriptions` too. The image and speech engines only
+use memory while she uses them; `yourai status` shows which are loaded:
+
+```console
+$ yourai status
+…
+│ image          ┆ sd-turbo — loaded, 2.0 GB RAM, port 39101          │
+│ speech to text ┆ whisper-small — ready (loads on first use)         │
+│ text to speech ┆ qwen3-tts-1.7b — runs per request                  │
+```
+
+With the agent on, `yourai chat` can use these too: "draw a diagram of mitosis" makes the
+model call `generate_image`, and the picture is saved in `outputs/images/`.
+
+## 11. Free memory for a game: `yourai pause` and `yourai resume`
 
 ```console
 $ yourai pause
@@ -285,7 +355,7 @@ Loading the model (first start can take a minute)…
 ✔ study-buddy is running (pid 15307, loaded in 1s)
 ```
 
-## 11. Something odd? `yourai logs`
+## 12. Something odd? `yourai logs`
 
 ```console
 $ yourai logs -n 4
@@ -297,7 +367,7 @@ $ yourai logs -n 4
 
 `yourai logs -f` keeps following new lines until Ctrl+C.
 
-## 12. Use it from her phone (local network)
+## 13. Use it from her phone (local network)
 
 She creates a second project that other devices on her Wi-Fi can reach:
 
@@ -313,26 +383,32 @@ The key is never written to `yourai.toml`. Requests without it get `401`; reques
 with `Authorization: Bearer <key>` work. The 7B model is already downloaded, so `build`
 only takes a second.
 
-## 13. Keep things fresh: `yourai update` and `yourai self-update`
+## 14. Keep things fresh: `yourai update` and `yourai self-update`
 
 ```console
+$ cd ~/study-buddy
 $ yourai update
 Refreshing the model catalog…
 
 Updates for this project
-┌───────────────────────────┬───────────────┬───────────────┬────────────┐
-│ Component                 ┆ Installed     ┆ Latest        ┆            │
-╞═══════════════════════════╪═══════════════╪═══════════════╪════════════╡
-│ Engine (llama.cpp)        ┆ b12015        ┆ b12015        ┆ up to date │
-│ Model qwen2.5-7b Q4_K_M   ┆ bb46a2c1a0a4… ┆ bb46a2c1a0a4… ┆ up to date │
-└───────────────────────────┴───────────────┴───────────────┴────────────┘
+┌─────────────────────────────────────┬─────────────────────┬─────────────────────┬────────────┐
+│ Component                           ┆ Installed           ┆ Latest              ┆            │
+╞═════════════════════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+│ Engine (llama.cpp)                  ┆ b12015              ┆ b12015              ┆ up to date │
+│ Engine (stable-diffusion.cpp)       ┆ master-1031-c6dfa9d ┆ master-1031-c6dfa9d ┆ up to date │
+│ Engine (whisper.cpp)                ┆ v1.9.5              ┆ v1.9.5              ┆ up to date │
+│ Model qwen2.5-7b Q4_K_M             ┆ 65b8fcd92af6…       ┆ 65b8fcd92af6…       ┆ up to date │
+│ Image generation model sd-turbo     ┆ d50be7655f0a…       ┆ d50be7655f0a…       ┆ up to date │
+│ Speech to text model whisper-small  ┆ 1be3a9b20638…       ┆ 1be3a9b20638…       ┆ up to date │
+│ Text to speech model qwen3-tts-1.7b ┆ 8d18c94acb2a…       ┆ 8d18c94acb2a…       ┆ up to date │
+└─────────────────────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
 $ yourai self-update --check
 Checking for a new version…
-✔ yourai v0.0.1 is the latest version
+✔ yourai v0.0.2 is the latest version
 ```
 
-## 14. Done for the semester: `yourai stop` and `yourai uninstall`
+## 15. Done for the semester: `yourai stop` and `yourai uninstall`
 
 ```console
 $ yourai stop
@@ -361,12 +437,13 @@ She keeps the models, so reinstalling next semester needs no downloads.
 | 3 | `yourai init` | Created `study-buddy/` with a reviewed plan |
 | 4 | `yourai build` | Downloaded and verified the engine and model |
 | 5 | `yourai start`, `status` | Ran it in the background on port 8080 |
-| 6 | `yourai chat` | Chatted in the terminal |
+| 6 | `yourai chat` | Chatted in the terminal; the agent read her notes |
 | 7 | API at `/v1` | Used it from curl and Python |
 | 8 | `yourai config`, `rebuild` | Lowered temperature, raised context |
 | 9 | `config set model.id` + `rebuild` | Upgraded to the 7B model |
-| 10 | `yourai pause`, `resume` | Freed memory, then reloaded |
-| 11 | `yourai logs` | Looked at the server log |
-| 12 | `init --access lan` | Reached it from her phone with an API key |
-| 13 | `yourai update`, `self-update` | Checked for newer engine, model, and CLI |
-| 14 | `yourai stop`, `uninstall` | Stopped it and removed the CLI, kept models |
+| 10 | `yourai image`, `speak`, `transcribe` | Made a slide picture, listened to and transcribed lectures |
+| 11 | `yourai pause`, `resume` | Freed memory, then reloaded |
+| 12 | `yourai logs` | Looked at the server log |
+| 13 | `init --access lan` | Reached it from her phone with an API key |
+| 14 | `yourai update`, `self-update` | Checked for newer engines, models, and CLI |
+| 15 | `yourai stop`, `uninstall` | Stopped it and removed the CLI, kept models |

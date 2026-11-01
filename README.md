@@ -8,6 +8,16 @@ hardware, downloads it (verified by checksum), and runs it locally with
 a chat page in the browser, and an OpenAI-compatible API on `localhost`.
 Your prompts never leave your computer.
 
+Optional capabilities, picked in the wizard:
+
+- **Agent**: the terminal chat can read your files (text, code, PDF) and, if you allow it,
+  write them. It can also call the capabilities below.
+- **Vision**: models such as Qwen2.5-VL, Gemma 3, and Qwen2.5-Omni see images (and Omni hears audio).
+- **Images** with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+  (SD-Turbo, FLUX.1 schnell), and **short videos** with Wan2.1.
+- **Speech to text** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp), and
+  **text to speech** with Qwen3-TTS.
+
 Website: <https://yourai.bdtren.com>
 
 ## Install
@@ -58,8 +68,23 @@ Non-interactive setup (for scripts and CI):
 ```sh
 yourai init --yes --name my-ai
 yourai init --yes --model qwen2.5-7b --quant Q4_K_M --ctx 8192
+yourai init --yes --name studio --capabilities agent,image,stt,tts --image-model sd-turbo
 cd my-ai && yourai build --accept-license && yourai start
 ```
+
+With capabilities turned on:
+
+```sh
+yourai image "a red fox in the snow"           # saved in outputs/images/
+yourai video "waves on a beach at sunset"      # takes minutes; saved in outputs/videos/
+yourai speak "Your build is ready."            # saved in outputs/audio/
+yourai transcribe meeting.wav                  # prints the text
+yourai chat                                    # "summarize notes.pdf", "draw a logo for…"
+```
+
+Image, video, and speech engines start the first time you use them and unload after
+`server.idle_unload_minutes` (default 10) without use. Only one of image or video is loaded
+at a time.
 
 ## Commands
 
@@ -72,7 +97,11 @@ cd my-ai && yourai build --accept-license && yourai start
 | `pause` / `resume` | Unload the model to free memory, then load it again |
 | `status` | Running state, port, model, and memory use |
 | `logs [-f] [-n N]` | Show server logs |
-| `chat` | Chat in the terminal (`/reset` clears history, `/exit` quits) |
+| `chat` | Chat in the terminal; with the agent on it can use tools (`/image`, `/audio`, `/files`, `/reset`, `/help`, `/exit`) |
+| `image <prompt> [--size WxH] [--n N]` | Create images (needs `[image]` enabled) |
+| `video <prompt> [--frames N] [--fps N]` | Create a short video (needs `[video]` enabled) |
+| `speak <text> [--out FILE]` | Text to speech, saved as WAV (needs `[text_to_speech]`) |
+| `transcribe <file> [--out FILE]` | Speech to text (needs `[speech_to_text]`) |
 | `config show\|get\|set\|edit\|validate` | Read or change `yourai.toml` safely |
 | `rebuild` | Apply config changes, redoing only what changed |
 | `update [--engine] [--model]` | Refresh the model catalog and apply updates |
@@ -89,6 +118,7 @@ my-ai/
 ├── yourai.toml          # all settings, with comments
 ├── prompts/system.md    # the system prompt
 ├── data/docs/           # reserved for document search (later release)
+├── outputs/             # images, videos, and audio you create
 ├── scripts/             # start/stop helpers for sh and PowerShell
 ├── README.md
 └── .yourai/             # runtime state, logs, lock file, secrets (git-ignored)
@@ -96,6 +126,22 @@ my-ai/
 
 Models and engines are shared between projects in `~/.yourai`, so two projects using
 the same model download it once.
+
+## API
+
+Besides the llama.cpp endpoints (`/v1/chat/completions`, `/v1/models`, …), the same port
+serves OpenAI-style media endpoints for the enabled capabilities:
+
+| Endpoint | Capability |
+| --- | --- |
+| `POST /v1/images/generations` | image |
+| `POST /v1/videos/generations` | video (synchronous; can take minutes) |
+| `POST /v1/audio/transcriptions` | speech to text (multipart `file`) |
+| `POST /v1/audio/speech` | text to speech (returns WAV) |
+| `GET /files/<path>` | files in `outputs/` |
+| `GET /yourai/status` | which engines are loaded |
+
+Vision models accept OpenAI `image_url` and `input_audio` content parts in chat messages.
 
 ## Privacy and security
 
@@ -107,6 +153,11 @@ the same model download it once.
   `yourai.toml`.
 - Every download is checked against a SHA-256 in the catalog. Models that need a license
   accepted ask before downloading.
+- The chat agent only sees `agent.workspace` (default: the project folder). It cannot leave
+  that folder, follow symlinks out of it, or read `.yourai/`. Writing is off unless
+  `agent.allow_write = true`, and every write asks you first with a preview.
+- Engines listen on `127.0.0.1` only; everything goes through the one public port, which
+  checks the API key in LAN mode.
 
 ## Exit codes
 
@@ -144,12 +195,84 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 ```
 
-- `catalog/catalog.json` lists the models and the pinned llama.cpp build. It is bundled
-  into the binary and also published at `https://yourai.bdtren.com/cli/catalog.json`, so the
+- `catalog/catalog.json` lists the models and the pinned llama.cpp, stable-diffusion.cpp,
+  and whisper.cpp builds. It is bundled into the binary and also published at
+  `https://yourai.bdtren.com/cli/catalog.v2.json` (the number is the catalog schema), so the
   model list can be updated without a new CLI release.
 - `scripts/` has the installers and the release helpers (`package.sh`, `publish_web.sh`,
-  `npm_publish.sh`, `update_formula.sh`).
+  `npm_publish.sh`, `update_formula.sh`), plus `build_engine.sh`, `engines_catalog.py`, and
+  `publish_engines.sh` for the macOS engine builds that upstream does not ship.
+
+## TODO
+
+Checklist of product features. Checked items ship in this version (`0.0.2`).
+
+### Core flow
+- [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
+- [x] Guided `init` wizard with Recommended choices and reasons
+- [x] Non-interactive `init --yes` (and flag overrides) for scripts and CI
+- [x] Project scaffold (`yourai.toml`, prompts, scripts, `.yourai/`)
+- [x] `build` — download engine + model with SHA-256 checks and license prompt
+- [x] `start` / `stop` / `status` / `logs`
+- [x] `pause` / `resume` (unload model to free memory)
+- [x] Terminal `chat` (`/reset`, `/exit`, `/help`)
+- [x] Browser chat page (llama.cpp web UI)
+- [x] OpenAI-compatible API on `localhost` (`/v1`)
+- [x] `config show|get|set|edit|validate` (preserves TOML comments)
+- [x] Smart `rebuild` (only redo what changed)
+- [x] `update` catalog / `--engine` / `--model`
+- [x] `self-update` with install-method detection (script, Homebrew, npm)
+- [x] `uninstall` (asks separately about models and engines)
+- [x] Shell completions (bash, zsh, fish, powershell, elvish)
+- [x] Clear exit codes and `--debug` / `NO_COLOR`
+
+### Hardware and models
+- [x] Hardware report with source and confidence
+- [x] Model catalog (bundled + remote refresh)
+- [x] Recommender for chat and code goals / quantization / context
+- [x] Shared `~/.yourai` cache across projects
+- [x] Resumable downloads
+- [x] llama.cpp runtime (Metal, CUDA, Vulkan, CPU builds)
+- [ ] Ollama as a managed runtime
+- [ ] vLLM as a managed runtime
+- [ ] Custom / gated Hugging Face models end-to-end in the wizard
+
+### Agent and multimodal
+- [x] Capabilities multi-select in the wizard, with a model question and recommendation for each
+- [x] Agent tools in `chat`: list, read (text, code, PDF), and write files in a sandboxed workspace
+- [x] Vision and omni chat models (`/image`, `/audio` attachments; `image_url` / `input_audio` in the API)
+- [x] Image generation (`yourai image`, `/v1/images/generations`) with stable-diffusion.cpp
+- [x] Video generation (`yourai video`, `/v1/videos/generations`) with Wan2.1
+- [x] Speech to text (`yourai transcribe`, `/v1/audio/transcriptions`) with whisper.cpp
+- [x] Text to speech (`yourai speak`, `/v1/audio/speech`) with Qwen3-TTS
+- [x] One port for everything: gateway with on-demand engines and idle unload
+- [x] Config schema 2 with automatic migration of older `yourai.toml` files
+- [ ] Image editing and image-to-video
+- [ ] Voice cloning from a sample in the wizard
+- [ ] Agent tools that run commands or browse the web
+
+### Privacy and network
+- [x] Default bind to `127.0.0.1`
+- [x] LAN mode with generated API key (secrets file, not `yourai.toml`)
+- [x] Daily CLI update check with `YOURAI_NO_UPDATE_CHECK` opt-out
+- [ ] Auto-start on login
+
+### Distribution
+- [x] `install.sh` / `install.ps1` (SHA-256 vs website and GitHub)
+- [x] GitHub Releases for six targets (macOS, Linux musl, Windows; arm64 + x64)
+- [x] Website channel at `https://yourai.bdtren.com/cli/`
+- [x] Homebrew formula (`brew install bdtren/yourai/yourai`)
+- [x] npm packages (`@yourai/cli` + platform packages)
+- [ ] macOS code signing and notarization (pipeline ready; not on by default yet)
+- [ ] Submit formula/cask to the official Homebrew catalogues
+
+### Later modules
+- [ ] Document search / RAG (`data/docs/`, index, retrieve into prompts)
+- [ ] Fine-tuning tools (managed train env → GGUF)
+- [ ] Plugins / hooks (RAG injection in the gateway)
+- [ ] Desktop wrapper app
+- [ ] Community-contributed model catalog
 
 ## License
 
-MIT. Models have their own licenses, shown before download.
+Apache License 2.0. Models have their own licenses, shown before download.

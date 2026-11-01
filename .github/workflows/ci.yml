@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,3 +41,52 @@ jobs:
           if ($r) { exit 1 }
       - name: catalog is valid JSON
         run: python3 -m json.tool catalog/catalog.json > /dev/null
+
+  # Real downloads and real engines with the smallest models: chat, image, speech round trip.
+  e2e:
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      YOURAI_NO_UPDATE_CHECK: "1"
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - uses: actions/cache@v4
+        with:
+          path: ~/.yourai/models
+          key: e2e-models-${{ hashFiles('catalog/catalog.json') }}
+      - name: init and build
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          cd "$RUNNER_TEMP"
+          yourai init e2e --yes --model qwen2.5-0.5b --port 18080 \
+            --capabilities agent,image,stt,tts \
+            --image-model sd-turbo --stt-model whisper-base --tts-model qwen3-tts-1.7b
+          cd e2e && yourai build --accept-license
+      - name: start, chat, image, speak, transcribe
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          cd "$RUNNER_TEMP/e2e"
+          yourai start
+          curl -fsS http://127.0.0.1:18080/v1/chat/completions -H 'content-type: application/json' \
+            -d '{"messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}' | grep -q '"content"'
+          yourai image "a red apple on a table" --size 256x256 --steps 1
+          ls outputs/images/*.png
+          yourai speak "Hello from your own AI." --out hello.wav
+          yourai transcribe hello.wav | tee heard.txt
+          grep -qi "hello" heard.txt
+          yourai status
+      - name: logs
+        if: always()
+        run: tail -n 50 "$RUNNER_TEMP"/e2e/.yourai/*.log || true
+      - name: stop
+        if: always()
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          cd "$RUNNER_TEMP/e2e" && yourai stop || true
+          ! pgrep -l 'llama-server|sd-server|whisper-server'

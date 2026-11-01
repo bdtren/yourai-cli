@@ -30,7 +30,15 @@ echo "==> uploading release archives"
 rsync_to "$dist"/yourai-"${version}"-* "$REMOTE:$REMOTE_DIR/releases/$version/"
 
 echo "==> uploading installers and catalog"
-rsync_to "$root/scripts/install.sh" "$root/scripts/install.ps1" "$root/catalog/catalog.json" "$REMOTE:$REMOTE_DIR/"
+rsync_to "$root/scripts/install.sh" "$root/scripts/install.ps1" "$REMOTE:$REMOTE_DIR/"
+# Each catalog format has its own file so older CLIs keep refreshing the format they understand.
+catalog_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$root/catalog/catalog.json")"
+rsync_to "$root/catalog/catalog.json" "$REMOTE:$REMOTE_DIR/catalog.v${catalog_version}.json"
+
+if compgen -G "$root/dist-engines/*.sha256" > /dev/null; then
+  echo "==> uploading engine builds from dist-engines/"
+  "$root/scripts/publish_engines.sh" "$root/dist-engines"
+fi
 
 echo "==> publishing latest.txt = $version"
 ssh_cmd "printf '%s\n' '$version' > '$REMOTE_DIR/latest.txt.tmp' && mv '$REMOTE_DIR/latest.txt.tmp' '$REMOTE_DIR/latest.txt' && chmod 644 '$REMOTE_DIR/latest.txt'"

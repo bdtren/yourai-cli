@@ -16,7 +16,10 @@ fn main() {
     let debug = cli.debug;
     let show_update_notice = !matches!(
         cli.command,
-        cli::Command::SelfUpdate { .. } | cli::Command::Completions { .. } | cli::Command::Uninstall
+        cli::Command::SelfUpdate { .. }
+            | cli::Command::Completions { .. }
+            | cli::Command::Uninstall
+            | cli::Command::Gateway
     );
 
     if show_update_notice {

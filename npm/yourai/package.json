@@ -31,5 +31,5 @@
     "@yourai/cli-win32-x64": "0.0.1",
     "@yourai/cli-win32-arm64": "0.0.1"
   },
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

@@ -3,10 +3,13 @@ use std::path::PathBuf;
 use console::style;
 
 use crate::cli::InitArgs;
-use crate::core::catalog::Catalog;
-use crate::core::config::{Config, GenerationCfg, ModelCfg, RuntimeCfg, ServerCfg, SCHEMA_VERSION};
+use crate::core::catalog::{Catalog, Kind};
+use crate::core::config::{
+    AgentCfg, Capability, Config, GenerationCfg, ImageCfg, ModelCfg, RuntimeCfg, ServerCfg, SttCfg, TtsCfg, VideoCfg,
+    SCHEMA_VERSION,
+};
 use crate::core::hardware::{self, Confidence, Hardware};
-use crate::core::{engine, process, project, secrets};
+use crate::core::{engine, process, project, recommender, secrets};
 use crate::error::{fail_hint, Exit};
 use crate::ui;
 use crate::wizard::options::{Answers, Ctx};
@@ -23,6 +26,11 @@ fn flag<'a>(args: &'a InitArgs, key: &str) -> Option<&'a str> {
         "interface" => args.interface.as_deref(),
         "access" => args.access.as_deref(),
         "port" => args.port.as_deref(),
+        "capabilities" => args.capabilities.as_deref(),
+        "image_model" => args.image_model.as_deref(),
+        "video_model" => args.video_model.as_deref(),
+        "stt_model" => args.stt_model.as_deref(),
+        "tts_model" => args.tts_model.as_deref(),
         _ => None,
     }
 }
@@ -62,7 +70,9 @@ impl Wizard<'_> {
         };
         let Some(q) = q else { return Ok(false) };
 
-        let value = match flag(self.args, key).filter(|_| !force_prompt) {
+        // `--yes` alone keeps the download to the chat model; media models are tens of GB.
+        let yes_default = (key == "capabilities" && self.yes).then_some("agent");
+        let value = match flag(self.args, key).or(yes_default).filter(|_| !force_prompt) {
             Some(v) if key == "port" && q.find(v).is_none() => parse_port(v, &self.answers)?,
             Some(v) => prompt::check_flag(&q, v)?,
             None => prompt::ask(&q, self.yes && !force_prompt)?,
@@ -103,11 +113,35 @@ impl Wizard<'_> {
             let base = self.base_hw.clone();
             apply_vram(&mut self.hw, &base, &value);
         }
+        let value = if key == "capabilities" && self.args.capabilities.is_none() {
+            self.drop_vision_for_text_model(value)
+        } else {
+            value
+        };
         if key == "access" && value == "lan" {
             ui::warn("Other devices on your network will be able to reach this AI. An API key will be generated and required.");
         }
         self.answers.set(key, value);
         Ok(true)
+    }
+
+    /// `--model` naming a text-only model wins over a recommended "vision".
+    fn drop_vision_for_text_model(&self, value: String) -> String {
+        let text_model = self
+            .args
+            .model
+            .as_deref()
+            .and_then(|id| self.catalog.model(id))
+            .is_some_and(|m| m.kind == Kind::Text);
+        if !text_model {
+            return value;
+        }
+        let kept: Vec<&str> = value.split(',').filter(|v| *v != "vision").collect();
+        if kept.is_empty() {
+            "none".into()
+        } else {
+            kept.join(",")
+        }
     }
 
     /// True if the current answer for `key` is still a valid, available choice.
@@ -123,6 +157,12 @@ impl Wizard<'_> {
         let cur = self.answers.get(key);
         if key == "port" && cur.parse::<u16>().is_ok() {
             return Ok(true);
+        }
+        if q.multi.is_some() {
+            return Ok(cur == "none"
+                || cur
+                    .split(',')
+                    .all(|v| q.find(v).is_some_and(|o| o.unavailable.is_none())));
         }
         Ok(q.find(cur).is_some_and(|o| o.unavailable.is_none()))
     }
@@ -263,6 +303,26 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
 
     let a = &w.answers;
     let lan = a.access == "lan";
+    let budget = hardware::budget_gb(&w.hw);
+    // Disabled capabilities still get the recommended model, so turning one on later
+    // is a single `yourai config set <table>.enabled true`.
+    let cap_model = |cap: Capability| -> (bool, String) {
+        let value = questions::CAP_VALUES.iter().find(|(_, c)| *c == cap).unwrap().0;
+        let on = a.has_cap(value);
+        let chosen = a.get(questions::cap_question(cap));
+        let id = if on && !chosen.is_empty() {
+            chosen.to_string()
+        } else {
+            recommender::recommend_cap_model(&w.hw, &w.catalog, cap, budget, budget)
+                .map(|m| m.id.clone())
+                .unwrap_or_default()
+        };
+        (on && !id.is_empty(), id)
+    };
+    let (image_on, image_model) = cap_model(Capability::Image);
+    let (video_on, video_model) = cap_model(Capability::Video);
+    let (stt_on, stt_model) = cap_model(Capability::SpeechToText);
+    let (tts_on, tts_model) = cap_model(Capability::TextToSpeech);
     let cfg = Config {
         schema_version: SCHEMA_VERSION,
         name: name.clone(),
@@ -277,6 +337,7 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             },
             repo: a.custom_repo.clone(),
             file: a.custom_file.clone(),
+            mmproj: "auto".into(),
         },
         runtime: RuntimeCfg {
             engine: a.runtime.clone(),
@@ -294,6 +355,31 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             port: a.port.parse().unwrap_or(8080),
             web_ui: a.interface == "webui",
             require_api_key: lan,
+            idle_unload_minutes: 10,
+        },
+        agent: AgentCfg {
+            enabled: a.has_cap("agent"),
+            ..Default::default()
+        },
+        image: ImageCfg {
+            enabled: image_on,
+            model: image_model,
+            ..Default::default()
+        },
+        video: VideoCfg {
+            enabled: video_on,
+            model: video_model,
+            ..Default::default()
+        },
+        speech_to_text: SttCfg {
+            enabled: stt_on,
+            model: stt_model,
+            ..Default::default()
+        },
+        text_to_speech: TtsCfg {
+            enabled: tts_on,
+            model: tts_model,
+            ..Default::default()
         },
     };
     cfg.validate()?;
@@ -322,6 +408,22 @@ fn label_for(w: &Wizard, key: &str) -> String {
     if key == "model" && v == "custom" {
         return format!("{}/{}", w.answers.custom_repo, w.answers.custom_file);
     }
+    if key == "capabilities" {
+        if v == "none" {
+            return "chat only".into();
+        }
+        let q = questions::build(key, &c).ok().flatten();
+        return v
+            .split(',')
+            .map(|x| {
+                q.as_ref()
+                    .and_then(|q| q.find(x))
+                    .map(|o| o.label.clone())
+                    .unwrap_or_else(|| x.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
     questions::build(key, &c)
         .ok()
         .flatten()
@@ -341,12 +443,16 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
         let title = match *key {
             "vram" => "GPU memory",
             "goal" => "Goal",
+            "capabilities" => "Capabilities",
             "model" => "Model",
             "quant" => "Quantization",
             "runtime" => "Runtime",
             "ctx" => "Context length",
+            "image_model" => "Image model",
+            "video_model" => "Video model",
+            "stt_model" => "Speech-to-text model",
+            "tts_model" => "Voice model",
             "interface" => "Interface",
-            "features" => "Extra features",
             "access" => "Network access",
             "port" => "Port",
             _ => key,
@@ -355,15 +461,43 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
     }
     println!("{t}");
 
-    let entry = w.catalog.llama();
-    let engine_mb: f64 = engine::select_key(&w.hw, entry)
-        .ok()
-        .filter(|(k, _)| !engine::install_dir(&entry.version, k).join(".installed").is_file())
-        .and_then(|(k, _)| entry.assets.get(&k).map(|v| v.iter().map(|a| a.size_mb).sum()))
-        .unwrap_or(0.0);
+    let a = &w.answers;
+    let mut specs = vec![&engine::LLAMA];
+    if a.has_cap("image") || a.has_cap("video") {
+        specs.push(&engine::SD);
+    }
+    if a.has_cap("stt") {
+        specs.push(&engine::WHISPER);
+    }
+    let engine_mb: f64 = specs
+        .into_iter()
+        .map(|s| engine::download_mb(&w.hw, &w.catalog, s))
+        .sum();
     let model = w.catalog.model(&w.answers.model);
-    let model_gb = model.and_then(|m| m.quants.get(&w.answers.quant)).map(|q| q.size_gb);
+    let vision = w.answers.has_cap("vision");
+    let model_gb = model.and_then(|m| {
+        let q = m.quants.get(&w.answers.quant)?;
+        let mm = if vision {
+            m.mmproj.as_ref().map(|f| f.size_gb).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        Some(q.size_gb + mm)
+    });
     let mem = model.and_then(|m| m.memory_gb(&w.answers.quant, w.answers.ctx_tokens()));
+    let caps: Vec<_> = questions::CAP_VALUES
+        .iter()
+        .filter(|(v, _)| w.answers.has_cap(v))
+        .filter_map(|(_, c)| w.catalog.model(w.answers.get(questions::cap_question(*c))))
+        .collect();
+    let caps_gb: f64 = caps
+        .iter()
+        .map(|m| m.download_gb(m.default_quant()).unwrap_or(0.0))
+        .sum();
+    let peak_gb = caps
+        .iter()
+        .map(|m| m.memory_gb(m.default_quant(), 0).unwrap_or(0.0))
+        .fold(0.0, f64::max);
 
     let mut e = ui::table();
     e.set_header(vec!["Estimate", "Amount"]);
@@ -372,26 +506,48 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
     } else {
         "engine already installed".to_string()
     };
+    let caps_text = if caps.is_empty() {
+        String::new()
+    } else {
+        format!(" + {} for capabilities", ui::gb(caps_gb))
+    };
     e.add_row(vec![
         "Download".to_string(),
         match model_gb {
-            Some(g) => format!("{} model + {engine_text}", ui::gb(g)),
-            None => format!("custom model (size unknown) + {engine_text}"),
+            Some(g) => format!("{} model{caps_text} + {engine_text}", ui::gb(g)),
+            None => format!("custom model (size unknown){caps_text} + {engine_text}"),
         },
     ]);
+    let budget = hardware::budget_gb(&w.hw);
     e.add_row(vec![
         "Memory while running".to_string(),
-        mem.map(|m| format!("about {} (budget {})", ui::gb(m), ui::gb(hardware::budget_gb(&w.hw))))
-            .unwrap_or_else(|| "unknown for custom models".into()),
+        mem.map(|m| {
+            let mut s = format!("about {} for chat (budget {})", ui::gb(m), ui::gb(budget));
+            if peak_gb > 0.0 {
+                s.push_str(&format!(", up to {} more while creating media", ui::gb(peak_gb)));
+            }
+            s
+        })
+        .unwrap_or_else(|| "unknown for custom models".into()),
     ]);
     e.add_row(vec![
         "Disk use".to_string(),
         format!(
             "about {} in ~/.yourai (shared by all projects)",
-            ui::gb(model_gb.unwrap_or(0.0) + engine_mb * 2.5 / 1000.0)
+            ui::gb(model_gb.unwrap_or(0.0) + caps_gb + engine_mb * 2.5 / 1000.0)
         ),
     ]);
     println!("{e}");
+    if let Some(m) = mem {
+        if peak_gb > 0.0 && m + peak_gb > budget {
+            ui::warn(format!(
+                "the chat model and the largest media model together need about {}, more than the {} available; \
+                 media requests will be slow while the chat model is loaded (or pick lighter models)",
+                ui::gb(m + peak_gb),
+                ui::gb(budget)
+            ));
+        }
+    }
     println!(
         "{}",
         style("Nothing is downloaded yet. `yourai build` downloads after you confirm the model license.").dim()

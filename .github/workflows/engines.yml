@@ -1,0 +1,64 @@
+name: engines
+
+# Builds sd-server and whisper-server for the targets upstream does not ship
+# (upstream macOS builds need macOS 26+; there are no Linux ARM64 / Windows ARM64
+# sd-server builds and no macOS whisper-server builds). Run it by hand after bumping
+# SD_REF / WHISPER_REF in scripts/build_engine.sh, then:
+#   gh release download engines-<run> -R bdtren/yourai-cli -D dist-engines
+#   scripts/publish_engines.sh dist-engines                  (uploads to yourai.bdtren.com/cli/engines/)
+#   python3 scripts/engines_catalog.py dist-engines          (writes the SHA-256s into catalog/catalog.json)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15,         engine: sd-server,      key: macos-aarch64-metal }
+          - { os: macos-15,         engine: sd-server,      key: macos-x86_64-cpu }
+          - { os: ubuntu-24.04-arm, engine: sd-server,      key: linux-aarch64-cpu }
+          - { os: windows-11-arm,   engine: sd-server,      key: windows-aarch64-cpu }
+          - { os: macos-15,         engine: whisper-server, key: macos-aarch64-metal }
+          - { os: macos-15,         engine: whisper-server, key: macos-x86_64-cpu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        shell: bash
+        run: scripts/build_engine.sh ${{ matrix.engine }} ${{ matrix.key }} dist-engines
+      - name: smoke test
+        if: matrix.key != 'macos-x86_64-cpu'
+        shell: bash
+        run: |
+          set -e
+          d="$(mktemp -d)"
+          f="$(ls dist-engines/*.tar.gz dist-engines/*.zip 2>/dev/null | head -1)"
+          case "$f" in *.zip) unzip -q "$f" -d "$d" ;; *) tar -xzf "$f" -C "$d" ;; esac
+          exe="$(ls "$d"/${{ matrix.engine }}* | head -1)"
+          "$exe" --help > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.engine }}-${{ matrix.key }}
+          path: dist-engines/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: dist-engines
+          merge-multiple: true
+      - run: ls -la dist-engines && cat dist-engines/*.sha256
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: engines-${{ github.run_number }}
+          name: Engine builds ${{ github.run_number }}
+          prerelease: true
+          files: dist-engines/*

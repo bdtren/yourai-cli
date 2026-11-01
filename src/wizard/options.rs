@@ -29,6 +29,8 @@ impl Opt {
 
 #[derive(Debug, Clone)]
 pub struct Question {
+    /// Some(pre-selected option indexes) for a multi-select question.
+    pub multi: Option<Vec<usize>>,
     pub key: &'static str,
     pub title: String,
     pub why: String,
@@ -51,6 +53,21 @@ impl Question {
     pub fn find(&self, value: &str) -> Option<&Opt> {
         self.options.iter().find(|o| o.value.eq_ignore_ascii_case(value))
     }
+
+    /// The recommended answer as stored in `Answers`: one value, or a comma list
+    /// ("none" when nothing is selected) for multi-select questions.
+    pub fn recommended_value(&self) -> String {
+        if let Some(sel) = &self.multi {
+            let v: Vec<&str> = sel.iter().map(|i| self.options[*i].value.as_str()).collect();
+            if v.is_empty() {
+                "none".into()
+            } else {
+                v.join(",")
+            }
+        } else {
+            self.recommended_opt().value.clone()
+        }
+    }
 }
 
 /// Everything the wizard knows so far.
@@ -58,14 +75,19 @@ impl Question {
 pub struct Answers {
     pub vram: Option<String>,
     pub goal: String,
+    /// Comma list of capability values, or "none".
+    pub capabilities: String,
     pub model: String,
     pub custom_repo: String,
     pub custom_file: String,
     pub quant: String,
     pub runtime: String,
     pub ctx: String,
+    pub image_model: String,
+    pub video_model: String,
+    pub stt_model: String,
+    pub tts_model: String,
     pub interface: String,
-    pub features: String,
     pub access: String,
     pub port: String,
 }
@@ -75,12 +97,16 @@ impl Answers {
         match key {
             "vram" => self.vram.as_deref().unwrap_or(""),
             "goal" => &self.goal,
+            "capabilities" => &self.capabilities,
             "model" => &self.model,
             "quant" => &self.quant,
             "runtime" => &self.runtime,
             "ctx" => &self.ctx,
+            "image_model" => &self.image_model,
+            "video_model" => &self.video_model,
+            "stt_model" => &self.stt_model,
+            "tts_model" => &self.tts_model,
             "interface" => &self.interface,
-            "features" => &self.features,
             "access" => &self.access,
             "port" => &self.port,
             _ => "",
@@ -91,16 +117,24 @@ impl Answers {
         match key {
             "vram" => self.vram = Some(v),
             "goal" => self.goal = v,
+            "capabilities" => self.capabilities = v,
             "model" => self.model = v,
             "quant" => self.quant = v,
             "runtime" => self.runtime = v,
             "ctx" => self.ctx = v,
+            "image_model" => self.image_model = v,
+            "video_model" => self.video_model = v,
+            "stt_model" => self.stt_model = v,
+            "tts_model" => self.tts_model = v,
             "interface" => self.interface = v,
-            "features" => self.features = v,
             "access" => self.access = v,
             "port" => self.port = v,
             _ => {}
         }
+    }
+
+    pub fn has_cap(&self, cap: &str) -> bool {
+        self.capabilities.split(',').any(|c| c.trim() == cap)
     }
 
     pub fn ctx_tokens(&self) -> u32 {

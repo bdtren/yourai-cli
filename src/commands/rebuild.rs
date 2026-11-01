@@ -4,6 +4,7 @@ use crate::core::project::{Project, State};
 use crate::ui;
 
 pub fn run(p: &Project, accept_license: bool) -> anyhow::Result<()> {
+    p.upgrade_config()?;
     let cfg = p.config()?;
     let current = lock::section_hashes(&cfg, &p.system_prompt(&cfg));
     let state = lifecycle::live_state(p);
@@ -19,8 +20,8 @@ pub fn run(p: &Project, accept_license: bool) -> anyhow::Result<()> {
     }
     ui::info(format!("changed: {}", changed.join(", ")));
 
-    if changed.iter().any(|s| s == "model" || s == "runtime") {
-        ui::info("model or runtime changed: checking downloads (files already present are reused)");
+    if changed.iter().any(|s| lock::BUILD_SECTIONS.contains(&s.as_str())) {
+        ui::info("models or engines changed: checking downloads (files already present are reused)");
         build::prepare(p, &cfg, accept_license)?;
     } else if let Some(mut l) = p.lock() {
         l.sections = current;

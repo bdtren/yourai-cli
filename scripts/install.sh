@@ -16,18 +16,22 @@ sha256_of() {
   else err "need sha256sum or shasum to verify the download"; fi
 }
 
+shell_profile() {
+  case "${SHELL:-}" in
+    */zsh)  printf '%s' "$HOME/.zshrc" ;;
+    */bash) if [ "$(uname -s)" = Darwin ]; then printf '%s' "$HOME/.bash_profile"; else printf '%s' "$HOME/.bashrc"; fi ;;
+    *)      printf '%s' "$HOME/.profile" ;;
+  esac
+}
+
 add_to_path() {
   local dir="$1" line profile
   # shellcheck disable=SC2016
   line="export PATH=\"$dir:\$PATH\""
-  case "${SHELL:-}" in
-    */zsh)  profile="$HOME/.zshrc" ;;
-    */bash) profile="$HOME/.bashrc"; [ "$(uname -s)" = Darwin ] && profile="$HOME/.bash_profile" ;;
-    *)      profile="$HOME/.profile" ;;
-  esac
+  profile="$(shell_profile)"
   if [ -f "$profile" ] && grep -Fq "$dir" "$profile"; then return; fi
   printf '\n# added by yourai installer\n%s\n' "$line" >> "$profile"
-  say "added $dir to PATH in $profile (open a new terminal, or run: $line)"
+  say "added $dir to PATH in $profile"
 }
 
 main() {
@@ -115,12 +119,23 @@ main() {
   printf '{"method":"script","version":"%s","install_dir":"%s"}\n' "$version" "$install_dir" \
     > "$HOME/.yourai/install-receipt.json"
 
-  if [ "$modify_path" = 1 ]; then
-    case ":$PATH:" in *":$install_dir:"*) ;; *) add_to_path "$install_dir" ;; esac
+  local on_path=0
+  case ":$PATH:" in *":$install_dir:"*) on_path=1 ;; esac
+  if [ "$modify_path" = 1 ] && [ "$on_path" = 0 ]; then
+    add_to_path "$install_dir"
   fi
 
   say "installed to $install_dir/yourai"
-  say "next: run  yourai doctor  then  yourai init"
+  if [ "$on_path" = 1 ]; then
+    say "next: run  yourai doctor  then  yourai init"
+  elif [ "$modify_path" = 1 ]; then
+    printf '\n'
+    say "this terminal does not see yourai yet. Run this once (or open a new terminal):"
+    printf '\n    source %s\n\n' "$(shell_profile)"
+    say "then: yourai doctor  and  yourai init"
+  else
+    say "next: run  $install_dir/yourai doctor  (or add $install_dir to your PATH)"
+  fi
 }
 
 main "$@"

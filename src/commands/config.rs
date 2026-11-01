@@ -106,6 +106,7 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
             "set YOURAI_API_KEY, or put api_key = \"...\" in .yourai/secrets.toml",
         );
     }
+    p.upgrade_config()?;
     let mut doc = read_doc(p)?;
     let parts: Vec<&str> = key.split('.').collect();
     if parts.len() > 2 || parts.iter().any(|s| s.is_empty()) {
@@ -139,6 +140,13 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
             .map(Value::from)
             .map_err(|_| type_err(key, "true or false"))?,
         Some(Value::String(_)) => Value::from(raw),
+        Some(Value::Array(_)) => {
+            let mut arr = toml_edit::Array::new();
+            for s in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                arr.push(s);
+            }
+            Value::Array(arr)
+        }
         Some(_) => return Err(type_err(key, "a simple value")),
         None if creatable => Value::from(raw),
         None => return Err(unknown_key(key)),
@@ -188,6 +196,21 @@ mod tests {
         let cfg = p.config().unwrap();
         assert_eq!(cfg.generation.temperature, 0.5);
         assert_eq!(cfg.server.port, 9000);
+    }
+
+    #[test]
+    fn set_upgrades_v1_and_sets_lists() {
+        let (_t, p) = proj();
+        std::fs::write(p.config_path(), config::V1_SAMPLE).unwrap();
+        set_value(&p, "agent.tools", "read_file, list_files").unwrap();
+        set_value(&p, "image.model", "sd-turbo").unwrap();
+        set_value(&p, "image.enabled", "true").unwrap();
+        let text = std::fs::read_to_string(p.config_path()).unwrap();
+        assert!(text.contains("# my favourite model"));
+        let cfg = p.config().unwrap();
+        assert_eq!(cfg.agent.tools, vec!["read_file", "list_files"]);
+        assert!(cfg.image.enabled);
+        assert!(set_value(&p, "agent.tools", "format_disk").is_err());
     }
 
     #[test]

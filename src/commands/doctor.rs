@@ -1,9 +1,11 @@
 use std::path::Path;
 use std::time::Duration;
 
+use comfy_table::{Cell, Color};
 use console::style;
 
 use crate::core::catalog::Catalog;
+use crate::core::config::Capability;
 use crate::core::hardware::{self, Confidence, GpuVendor, Hardware};
 use crate::core::project::Project;
 use crate::core::{engine, paths, process, recommender};
@@ -220,31 +222,60 @@ pub fn run(fix: bool, network: bool, project: Option<&Path>) -> anyhow::Result<(
     let mut t = ui::table();
     t.set_header(vec!["Check", "Result", "Details", "What to do"]);
     for c in &checks {
+        // Color via Cell (not ANSI-in-string): embedded escapes inflate column
+        // width under comfy-table without `custom_styling` and shift separators left.
         let mark = if c.ok {
-            style("ok").green().to_string()
+            Cell::new("ok").fg(Color::Green)
         } else {
-            style("warn").yellow().to_string()
+            Cell::new("warn").fg(Color::Yellow)
         };
         t.add_row(vec![
-            c.name.to_string(),
+            Cell::new(c.name),
             mark,
-            c.detail.clone(),
-            c.fix.clone().unwrap_or_default(),
+            Cell::new(&c.detail),
+            Cell::new(c.fix.as_deref().unwrap_or("")),
         ]);
     }
     println!("{t}");
 
     let budget = hardware::budget_gb(&hw);
     ui::heading("What you can run");
-    for goal in ["chat", "code"] {
-        match recommender::recommend_model(&hw, &catalog, goal, budget) {
+    for (label, goal, vision) in [
+        ("chat", "chat", false),
+        ("code", "code", false),
+        ("vision", "chat", true),
+    ] {
+        match recommender::recommend_model(&hw, &catalog, goal, budget, vision) {
             Some(m) => ui::info(format!(
-                "{goal}: {} with {} (about {:.1} GB of memory)",
+                "{label}: {} with {} (about {:.1} GB of memory)",
                 m.name,
                 recommender::recommend_quant(m, budget, recommender::DEFAULT_CTX),
                 m.memory_gb("Q4_K_M", recommender::DEFAULT_CTX).unwrap_or(0.0)
             )),
-            None => ui::warn(format!("{goal}: no catalog model fits in {budget:.1} GB")),
+            None => ui::warn(format!("{label}: no catalog model fits in {budget:.1} GB")),
+        }
+    }
+    for cap in Capability::ALL {
+        let label = cap.label().to_lowercase();
+        let spec = engine::spec(cap.engine()).expect("known engine");
+        if !engine::available(&hw, &catalog, spec) {
+            ui::warn(format!("{label}: {} has no build for this computer yet", spec.label));
+            continue;
+        }
+        match recommender::recommend_cap_model(&hw, &catalog, cap, budget, budget) {
+            Some(m) => ui::info(format!(
+                "{label}: {} (about {:.1} GB of memory while working)",
+                m.name,
+                m.memory_gb(m.default_quant(), 0).unwrap_or(0.0)
+            )),
+            None => {
+                let why = catalog
+                    .models_of(cap.kind())
+                    .filter_map(|m| recommender::model_blocker(&hw, budget, m))
+                    .last()
+                    .unwrap_or_else(|| "no model in the catalog".into());
+                ui::warn(format!("{label}: not on this computer ({why})"));
+            }
         }
     }
     if !network {

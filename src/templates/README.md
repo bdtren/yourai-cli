@@ -18,6 +18,18 @@ yourai logs -f   # follow the server log
 When it is running, open the URL printed by `yourai start` in a browser for the chat page
 (if `server.web_ui = true`), or point any OpenAI-compatible app at `http://127.0.0.1:<port>/v1`.
 
+If you turned on capabilities in `yourai.toml`:
+
+```bash
+yourai image "a red fox in the snow"     # [image]
+yourai video "waves on a beach"          # [video], takes minutes
+yourai speak "Hello there"               # [text_to_speech]
+yourai transcribe recording.wav          # [speech_to_text]
+```
+
+With `[agent] enabled = true`, `yourai chat` can read files in `agent.workspace` (and write them
+after asking, if `allow_write = true`) and use the capabilities above. Type `/help` in the chat.
+
 ## Files
 
 | File | Who owns it | What it is |
@@ -26,6 +38,7 @@ When it is running, open the URL printed by `yourai start` in a browser for the 
 | `prompts/system.md` | you | The instructions the AI follows in `yourai chat`. |
 | `data/docs/` | you | Reserved for document search in a future version. |
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
+| `outputs/` | yourai | Images, videos, and audio you create. Gitignored. |
 | `.yourai/` | yourai | Runtime state, logs, lock file, and secrets. Gitignored; do not share. |
 
 Models and engines are stored once in `~/.yourai` and shared by all projects.

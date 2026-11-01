@@ -1,13 +1,58 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::catalog::{Catalog, EngineEntry};
+use super::catalog::{self, Catalog, EngineEntry, Model};
 use super::config::Config;
 use super::downloader;
 use super::hardware::{GpuVendor, Hardware};
 use super::paths;
 use crate::error::{CliError, Exit};
 use crate::ui;
+
+/// How to install and check one engine from the catalog.
+pub struct EngineSpec {
+    /// Catalog engine name.
+    pub name: &'static str,
+    /// Shown to the user.
+    pub label: &'static str,
+    /// Executable inside the archive, without `.exe`.
+    pub exe: &'static str,
+    /// Arguments that must exit 0 on a working build.
+    pub smoke: &'static [&'static str],
+}
+
+pub const LLAMA: EngineSpec = EngineSpec {
+    name: catalog::LLAMA,
+    label: "llama.cpp",
+    exe: "llama-server",
+    smoke: &["--version"],
+};
+
+pub const SD: EngineSpec = EngineSpec {
+    name: catalog::SD,
+    label: "stable-diffusion.cpp",
+    exe: "sd-server",
+    smoke: &["--version"],
+};
+
+pub const WHISPER: EngineSpec = EngineSpec {
+    name: catalog::WHISPER,
+    label: "whisper.cpp",
+    exe: "whisper-server",
+    smoke: &["--help"],
+};
+
+pub fn spec(name: &str) -> Option<&'static EngineSpec> {
+    [&LLAMA, &SD, &WHISPER].into_iter().find(|s| s.name == name)
+}
+
+pub fn exe_file(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
 
 fn os_arch() -> (String, String) {
     (std::env::consts::OS.to_string(), std::env::consts::ARCH.to_string())
@@ -31,55 +76,97 @@ pub fn cpu_key() -> String {
     format!("{os}-{arch}-cpu")
 }
 
+/// Asset keys to try, best first: the GPU build, Vulkan for NVIDIA without CUDA, then CPU.
+fn candidate_keys(hw: &Hardware) -> Vec<String> {
+    let want = preferred_key(hw);
+    let mut keys = vec![want.clone()];
+    if want.ends_with("-cuda") {
+        keys.push(want.replace("-cuda", "-vulkan"));
+    }
+    if !keys.contains(&cpu_key()) {
+        keys.push(cpu_key());
+    }
+    keys
+}
+
 /// Picks the best asset key the catalog actually has, falling back to the CPU build.
 /// Returns (key, reason-if-fallback).
 pub fn select_key(hw: &Hardware, entry: &EngineEntry) -> anyhow::Result<(String, Option<String>)> {
+    select_key_for(hw, entry, "llama.cpp")
+}
+
+fn select_key_for(hw: &Hardware, entry: &EngineEntry, label: &str) -> anyhow::Result<(String, Option<String>)> {
     let want = preferred_key(hw);
-    if entry.assets.contains_key(&want) {
-        return Ok((want, None));
-    }
-    let cpu = cpu_key();
-    if entry.assets.contains_key(&cpu) {
-        return Ok((
-            cpu,
-            Some(format!(
-                "no GPU build for `{want}` in the catalog, using the CPU build (slower)"
-            )),
-        ));
+    for key in candidate_keys(hw) {
+        if entry.assets.contains_key(&key) {
+            let note = (key != want).then(|| {
+                if key == cpu_key() {
+                    format!("no {label} GPU build for `{want}` in the catalog, using the CPU build (slower)")
+                } else {
+                    format!("no {label} build for `{want}` in the catalog, using `{key}`")
+                }
+            });
+            return Ok((key, note));
+        }
     }
     Err(
-        CliError::new(Exit::Unsupported, format!("no llama.cpp build is available for {want}"))
-            .hint("supported: macOS (Apple Silicon, Intel), Linux and Windows on x86_64/arm64")
+        CliError::new(Exit::Unsupported, format!("no {label} build is available for {want}"))
+            .hint("run `yourai update` for a newer catalog, or turn this capability off in yourai.toml")
             .into(),
     )
+}
+
+/// Whether the catalog has any build of this engine for this machine.
+pub fn available(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> bool {
+    catalog
+        .engine(spec.name)
+        .is_some_and(|e| candidate_keys(hw).iter().any(|k| e.assets.contains_key(k)))
+}
+
+/// Download size of the build `ensure_spec` would install, or 0 if it is already installed.
+pub fn download_mb(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> f64 {
+    let Some(entry) = catalog.engine(spec.name) else {
+        return 0.0;
+    };
+    select_key_for(hw, entry, spec.label)
+        .ok()
+        .filter(|(k, _)| !spec_dir(spec, &entry.version, k).join(".installed").is_file())
+        .and_then(|(k, _)| entry.assets.get(&k).map(|v| v.iter().map(|a| a.size_mb).sum()))
+        .unwrap_or(0.0)
 }
 
 pub fn install_dir(version: &str, key: &str) -> PathBuf {
     paths::engines().join(format!("{version}-{key}"))
 }
 
-fn exe_name() -> &'static str {
-    if cfg!(windows) {
-        "llama-server.exe"
+fn spec_dir(spec: &EngineSpec, version: &str, key: &str) -> PathBuf {
+    if spec.name == LLAMA.name {
+        install_dir(version, key)
     } else {
-        "llama-server"
+        paths::engines().join(format!("{}-{version}-{key}", spec.exe))
     }
 }
 
-fn find_exe(dir: &Path) -> Option<PathBuf> {
-    let direct = dir.join(exe_name());
+fn find_exe(dir: &Path, name: &str) -> Option<PathBuf> {
+    let direct = dir.join(exe_file(name));
     if direct.is_file() {
         return Some(direct);
     }
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let p = entry.path();
         if p.is_dir() {
-            if let Some(found) = find_exe(&p) {
+            if let Some(found) = find_exe(&p, name) {
                 return Some(found);
             }
         }
     }
     None
+}
+
+/// Another program shipped in the same engine folder, such as `llama-tts`.
+pub fn sibling(exe: &Path, name: &str) -> Option<PathBuf> {
+    let p = exe.parent()?.join(exe_file(name));
+    p.is_file().then_some(p)
 }
 
 fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
@@ -96,10 +183,10 @@ fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `llama-server --version` must exit 0.
-pub fn smoke_test(exe: &Path) -> anyhow::Result<String> {
+/// The engine's smoke-test command (for example `llama-server --version`) must exit 0.
+fn smoke(exe: &Path, spec: &EngineSpec) -> anyhow::Result<String> {
     let out = Command::new(exe)
-        .arg("--version")
+        .args(spec.smoke)
         .env(lib_env_var(), exe.parent().unwrap())
         .output()?;
     let text = format!(
@@ -108,11 +195,17 @@ pub fn smoke_test(exe: &Path) -> anyhow::Result<String> {
         String::from_utf8_lossy(&out.stderr)
     );
     if !out.status.success() {
-        anyhow::bail!("llama-server --version failed: {}", text.trim());
+        let tail: Vec<&str> = text.trim().lines().rev().take(5).collect();
+        anyhow::bail!(
+            "{} {} failed: {}",
+            spec.exe,
+            spec.smoke.join(" "),
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+        );
     }
     Ok(text
         .lines()
-        .find(|l| l.starts_with("version"))
+        .find(|l| l.contains("version"))
         .unwrap_or("")
         .trim()
         .to_string())
@@ -129,24 +222,25 @@ pub fn lib_env_var() -> &'static str {
 }
 
 /// Downloads, verifies, unpacks, and smoke-tests one engine build. Idempotent.
-pub fn install(entry: &EngineEntry, key: &str) -> anyhow::Result<PathBuf> {
-    let dir = install_dir(&entry.version, key);
-    if let Some(exe) = find_exe(&dir) {
-        if dir.join(".installed").is_file() && smoke_test(&exe).is_ok() {
-            ui::ok(format!("engine llama.cpp {} ({key}) is installed", entry.version));
+fn install_spec(spec: &EngineSpec, entry: &EngineEntry, key: &str) -> anyhow::Result<PathBuf> {
+    let label = spec.label;
+    let dir = spec_dir(spec, &entry.version, key);
+    if let Some(exe) = find_exe(&dir, spec.exe) {
+        if dir.join(".installed").is_file() && smoke(&exe, spec).is_ok() {
+            ui::ok(format!("engine {label} {} ({key}) is installed", entry.version));
             return Ok(exe);
         }
     }
     let assets = entry
         .assets
         .get(key)
-        .ok_or_else(|| anyhow::anyhow!("catalog has no engine asset `{key}`"))?;
+        .ok_or_else(|| anyhow::anyhow!("catalog has no {label} asset `{key}`"))?;
     let staging = dir.with_extension("staging");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
     for a in assets {
         let dest = paths::downloads().join(&a.file);
-        let url = format!("{}/{}", entry.release_base, a.file);
+        let url = entry.asset_url(a);
         downloader::download(&downloader::Request {
             url: &url,
             dest: &dest,
@@ -158,49 +252,88 @@ pub fn install(entry: &EngineEntry, key: &str) -> anyhow::Result<PathBuf> {
     }
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::rename(&staging, &dir)?;
-    let exe = find_exe(&dir).ok_or_else(|| anyhow::anyhow!("llama-server not found inside the engine archive"))?;
+    let exe =
+        find_exe(&dir, spec.exe).ok_or_else(|| anyhow::anyhow!("{} not found inside the engine archive", spec.exe))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755))?;
+        for entry in std::fs::read_dir(exe.parent().unwrap())?.flatten() {
+            let p = entry.path();
+            if p.is_file() && p.extension().is_none() {
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))?;
+            }
+        }
     }
-    smoke_test(&exe)?;
+    smoke(&exe, spec)?;
     std::fs::write(dir.join(".installed"), key)?;
-    ui::ok(format!("engine llama.cpp {} ({key}) installed", entry.version));
+    ui::ok(format!("engine {label} {} ({key}) installed", entry.version));
     Ok(exe)
 }
 
-/// Installs the best build, retrying with the CPU build if the GPU build fails its smoke test.
+/// Installs the best llama.cpp build.
 pub fn ensure(hw: &Hardware, catalog: &Catalog) -> anyhow::Result<(String, PathBuf)> {
-    let entry = catalog.llama();
-    let (key, note) = select_key(hw, entry)?;
+    ensure_spec(hw, catalog, &LLAMA)
+}
+
+/// Installs the best build of an engine, retrying with the next build (Vulkan, then CPU)
+/// if one fails its smoke test.
+pub fn ensure_spec(hw: &Hardware, catalog: &Catalog, spec: &EngineSpec) -> anyhow::Result<(String, PathBuf)> {
+    let entry = catalog
+        .engine(spec.name)
+        .ok_or_else(|| anyhow::anyhow!("the catalog has no {} engine; run `yourai update`", spec.label))?;
+    let (key, note) = select_key_for(hw, entry, spec.label)?;
     if let Some(n) = note {
         ui::warn(n);
     }
-    match install(entry, &key) {
-        Ok(exe) => Ok((key, exe)),
-        Err(e) if key != cpu_key() && entry.assets.contains_key(&cpu_key()) => {
-            ui::warn(format!(
-                "the {key} build did not work on this machine ({e}); falling back to the CPU build"
-            ));
-            let cpu = cpu_key();
-            let exe = install(entry, &cpu)?;
-            Ok((cpu, exe))
+    let mut last = match install_spec(spec, entry, &key) {
+        Ok(exe) => return Ok((key, exe)),
+        Err(e) => e,
+    };
+    let rest: Vec<String> = candidate_keys(hw)
+        .into_iter()
+        .skip_while(|k| *k != key)
+        .skip(1)
+        .filter(|k| entry.assets.contains_key(k))
+        .collect();
+    let mut tried = key;
+    for k in rest {
+        ui::warn(format!(
+            "the {label} {tried} build did not work on this machine ({last}); trying {k}",
+            label = spec.label
+        ));
+        match install_spec(spec, entry, &k) {
+            Ok(exe) => return Ok((k, exe)),
+            Err(e) => {
+                last = e;
+                tried = k;
+            }
         }
-        Err(e) => Err(e),
     }
+    Err(last)
+}
+
+/// Where an engine listens.
+pub struct Bind<'a> {
+    pub host: &'a str,
+    pub port: u16,
 }
 
 /// Command-line arguments for llama-server. The API key is passed through a file,
 /// never on the command line.
-pub fn server_args(cfg: &Config, model_path: &Path, api_key_file: Option<&Path>) -> Vec<String> {
+pub fn llama_args(
+    cfg: &Config,
+    model_path: &Path,
+    mmproj: Option<&Path>,
+    bind: Bind,
+    api_key_file: Option<&Path>,
+) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "-m".into(),
         model_path.display().to_string(),
         "--host".into(),
-        cfg.server.host.clone(),
+        bind.host.to_string(),
         "--port".into(),
-        cfg.server.port.to_string(),
+        bind.port.to_string(),
         "-c".into(),
         cfg.runtime.context_length.to_string(),
         "-ngl".into(),
@@ -223,7 +356,104 @@ pub fn server_args(cfg: &Config, model_path: &Path, api_key_file: Option<&Path>)
     if let Some(f) = api_key_file {
         a.extend(["--api-key-file".into(), f.display().to_string()]);
     }
+    if let Some(p) = mmproj {
+        a.extend(["--mmproj".into(), p.display().to_string()]);
+    }
+    a.push("--jinja".into());
     a
+}
+
+/// stable-diffusion.cpp server for one image or video model. `files` maps each role
+/// (`model` or `diffusion_model`, `vae`, `t5xxl`, `clip_l`, ...) to its path.
+pub fn sd_args(
+    files: &std::collections::BTreeMap<String, String>,
+    main_role: &str,
+    port: u16,
+    threads: u32,
+) -> Vec<String> {
+    let mut a: Vec<String> = vec![
+        "--listen-ip".into(),
+        "127.0.0.1".into(),
+        "--listen-port".into(),
+        port.to_string(),
+    ];
+    // sd-server spells most component flags with `_` (`--clip_l`, `--t5xxl`) but this one with `-`.
+    let flag = |role: &str| match role {
+        "model" => "-m".to_string(),
+        "diffusion_model" => "--diffusion-model".to_string(),
+        other => format!("--{other}"),
+    };
+    if let Some(p) = files.get(main_role) {
+        a.extend([flag(main_role), p.clone()]);
+    }
+    for (role, p) in files {
+        if role != main_role && role != "model" && role != "diffusion_model" {
+            a.extend([flag(role), p.clone()]);
+        }
+    }
+    if threads > 0 {
+        a.extend(["-t".into(), threads.to_string()]);
+    }
+    a
+}
+
+pub fn whisper_args(model: &Path, port: u16, threads: u32, language: &str) -> Vec<String> {
+    let mut a: Vec<String> = vec![
+        "-m".into(),
+        model.display().to_string(),
+        "--host".into(),
+        "127.0.0.1".into(),
+        "--port".into(),
+        port.to_string(),
+        "-l".into(),
+        language.into(),
+    ];
+    if threads > 0 {
+        a.extend(["-t".into(), threads.to_string()]);
+    }
+    a
+}
+
+/// One `llama-tts` run that writes a WAV file.
+pub fn tts_args(
+    model: &Path,
+    mmproj: &Path,
+    text: &str,
+    language: &str,
+    speaker_file: Option<&Path>,
+    out: &Path,
+) -> Vec<String> {
+    let mut a: Vec<String> = vec![
+        "-m".into(),
+        model.display().to_string(),
+        "-mm".into(),
+        mmproj.display().to_string(),
+        "-p".into(),
+        text.into(),
+        "--tts-lang".into(),
+        language.into(),
+        "-o".into(),
+        out.display().to_string(),
+    ];
+    if let Some(s) = speaker_file {
+        a.extend(["--tts-speaker-file".into(), s.display().to_string()]);
+    }
+    a
+}
+
+/// Video/image engines are only worth offering with enough fast memory.
+pub fn model_fits(hw: &Hardware, m: &Model) -> Result<(), String> {
+    let need = m.memory_gb(m.default_quant(), 0).unwrap_or(0.0);
+    if m.kind == catalog::Kind::Video && super::hardware::cpu_only(hw) {
+        return Err("needs a GPU or Apple Silicon; on CPU a short clip takes hours".into());
+    }
+    let have = super::hardware::budget_gb(hw);
+    if need > have {
+        return Err(format!(
+            "needs about {need:.1} GB, this computer has {have:.1} GB to spare"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -235,10 +465,79 @@ mod tests {
     #[test]
     fn args_never_contain_the_key() {
         let cfg = sample();
-        let args = server_args(&cfg, Path::new("/m.gguf"), Some(Path::new("/k")));
+        let bind = Bind {
+            host: "127.0.0.1",
+            port: 39100,
+        };
+        let args = llama_args(&cfg, Path::new("/m.gguf"), None, bind, Some(Path::new("/k")));
         assert!(args.contains(&"--api-key-file".to_string()));
         assert!(!args.contains(&"--api-key".to_string()));
         assert!(!args.contains(&"--no-webui".to_string()));
+    }
+
+    #[test]
+    fn llama_args_add_projector_and_bind_locally() {
+        let cfg = sample();
+        let bind = Bind {
+            host: "127.0.0.1",
+            port: 39100,
+        };
+        let a = llama_args(&cfg, Path::new("/m.gguf"), Some(Path::new("/mm.gguf")), bind, None);
+        let s = a.join(" ");
+        assert!(s.contains("--mmproj /mm.gguf"));
+        assert!(s.contains("--host 127.0.0.1 --port 39100"));
+        assert!(s.contains("--jinja"));
+    }
+
+    #[test]
+    fn sd_args_map_roles_to_flags() {
+        let files: std::collections::BTreeMap<String, String> = [
+            ("diffusion_model", "/w.gguf"),
+            ("vae", "/vae.safetensors"),
+            ("t5xxl", "/t5.gguf"),
+            ("clip_l", "/clip.gguf"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let s = sd_args(&files, "diffusion_model", 39101, 0).join(" ");
+        assert!(s.starts_with("--listen-ip 127.0.0.1 --listen-port 39101 --diffusion-model /w.gguf"));
+        assert!(s.contains("--vae /vae.safetensors"));
+        assert!(s.contains("--t5xxl /t5.gguf"));
+        assert!(s.contains("--clip_l /clip.gguf"));
+        let one: std::collections::BTreeMap<String, String> =
+            [("model".to_string(), "/sd.gguf".to_string())].into_iter().collect();
+        assert_eq!(
+            sd_args(&one, "model", 1, 4).join(" "),
+            "--listen-ip 127.0.0.1 --listen-port 1 -m /sd.gguf -t 4"
+        );
+    }
+
+    #[test]
+    fn whisper_and_tts_args() {
+        let w = whisper_args(Path::new("/b.bin"), 39102, 0, "auto").join(" ");
+        assert_eq!(w, "-m /b.bin --host 127.0.0.1 --port 39102 -l auto");
+        let t = tts_args(
+            Path::new("/q.gguf"),
+            Path::new("/mm.gguf"),
+            "hi there",
+            "en",
+            Some(Path::new("/me.wav")),
+            Path::new("/o.wav"),
+        );
+        assert_eq!(t[5], "hi there", "text is one argument, never split");
+        let s = t.join(" ");
+        assert!(s.contains("-mm /mm.gguf") && s.contains("--tts-speaker-file /me.wav") && s.contains("-o /o.wav"));
+    }
+
+    #[test]
+    fn candidate_keys_try_vulkan_before_cpu_for_nvidia() {
+        let keys = candidate_keys(&fixtures::nvidia_8gb());
+        if keys[0].ends_with("-cuda") {
+            assert!(keys[1].ends_with("-vulkan"));
+            assert!(keys[2].ends_with("-cpu"));
+        }
+        assert!(keys.last().unwrap().ends_with("-cpu"));
     }
 
     #[test]

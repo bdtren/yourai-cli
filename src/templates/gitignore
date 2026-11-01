@@ -1,2 +1,4 @@
 # YourAI runtime state, logs, and secrets
 .yourai/
+# Images, videos, and audio created by yourai
+outputs/

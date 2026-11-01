@@ -1,9 +1,11 @@
+pub mod agent;
 pub mod build;
 pub mod chat;
 pub mod config;
 pub mod doctor;
 pub mod init;
 pub mod lifecycle;
+pub mod media;
 pub mod rebuild;
 pub mod self_update;
 pub mod uninstall;
@@ -36,5 +38,24 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             clap_complete::generate(shell, &mut Cli::command(), "yourai", &mut std::io::stdout());
             Ok(())
         }
+        Command::Image {
+            prompt,
+            size,
+            n,
+            steps,
+            seed,
+            negative,
+        } => media::image(&project()?, &prompt, size, n, steps, seed, negative),
+        Command::Video {
+            prompt,
+            size,
+            frames,
+            fps,
+            steps,
+            seed,
+        } => media::video(&project()?, &prompt, size, frames, fps, steps, seed),
+        Command::Speak { text, language, out } => media::speak(&project()?, &text, language, out),
+        Command::Transcribe { file, language, out } => media::transcribe(&project()?, &file, language, out),
+        Command::Gateway => crate::core::gateway::run(&project()?),
     }
 }

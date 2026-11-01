@@ -1,4 +1,7 @@
 use super::options::{Ctx, Opt, Question};
+use crate::core::catalog::{Kind, Model};
+use crate::core::config::Capability;
+use crate::core::engine;
 use crate::core::hardware::GpuVendor;
 use crate::core::process;
 use crate::core::recommender::{self, DEFAULT_CTX};
@@ -7,26 +10,52 @@ use crate::core::recommender::{self, DEFAULT_CTX};
 pub const ORDER: &[&str] = &[
     "vram",
     "goal",
+    "capabilities",
     "model",
     "quant",
     "runtime",
     "ctx",
+    "image_model",
+    "video_model",
+    "stt_model",
+    "tts_model",
     "interface",
-    "features",
     "access",
     "port",
 ];
 
+/// Capability answer values -> the yourai.toml capability they turn on.
+pub const CAP_VALUES: [(&str, Capability); 4] = [
+    ("image", Capability::Image),
+    ("video", Capability::Video),
+    ("stt", Capability::SpeechToText),
+    ("tts", Capability::TextToSpeech),
+];
+
+/// The wizard question that picks the model for a capability.
+pub fn cap_question(cap: Capability) -> &'static str {
+    match cap {
+        Capability::Image => "image_model",
+        Capability::Video => "video_model",
+        Capability::SpeechToText => "stt_model",
+        Capability::TextToSpeech => "tts_model",
+    }
+}
+
 pub fn build(key: &str, c: &Ctx) -> anyhow::Result<Option<Question>> {
     Ok(match key {
         "vram" => vram(c),
-        "goal" => Some(goal(c)),
+        "goal" => Some(goal()),
+        "capabilities" => Some(capabilities(c)),
         "model" => Some(model(c)?),
         "quant" => quant(c),
         "runtime" => Some(runtime(c)),
         "ctx" => Some(ctx(c)),
+        "image_model" => cap_model(c, Capability::Image),
+        "video_model" => cap_model(c, Capability::Video),
+        "stt_model" => cap_model(c, Capability::SpeechToText),
+        "tts_model" => cap_model(c, Capability::TextToSpeech),
         "interface" => Some(interface(c)),
-        "features" => Some(features(c)),
         "access" => Some(access()),
         "port" => Some(port(c)),
         _ => None,
@@ -58,6 +87,7 @@ fn vram(c: &Ctx) -> Option<Question> {
         ));
     }
     Some(Question {
+        multi: None,
         key: "vram",
         title: "How much memory does your GPU have?".into(),
         why: format!(
@@ -71,15 +101,7 @@ fn vram(c: &Ctx) -> Option<Question> {
     })
 }
 
-fn goal(c: &Ctx) -> Question {
-    let ft_reason = if c.cpu_only() || c.budget_gb() < 12.0 {
-        format!(
-            "needs 12 GB or more of GPU memory, you have {:.0} GB; also coming in a later version",
-            c.budget_gb()
-        )
-    } else {
-        "coming in a later version of yourai".into()
-    };
+fn goal() -> Question {
     let options = vec![
         Opt::new(
             "chat",
@@ -91,16 +113,9 @@ fn goal(c: &Ctx) -> Question {
             "Coding assistant",
             "Uses a model tuned for code with a longer context. Better for programming help.",
         ),
-        Opt::new(
-            "rag",
-            "Chat over my documents (RAG)",
-            "Answers using your own files without retraining.",
-        )
-        .unavailable_if(Some("coming in a later version of yourai".into())),
-        Opt::new("finetune", "Customize with fine-tuning", "Teaches the model your style with your own examples.")
-            .unavailable_if(Some(ft_reason)),
     ];
     Question {
+        multi: None,
         key: "goal",
         title: "What do you want to do?".into(),
         why: "Your goal decides which models and settings we suggest.".into(),
@@ -108,6 +123,165 @@ fn goal(c: &Ctx) -> Question {
         recommended: 0,
         reason: "Recommended for first-time users: it works on almost any computer.".into(),
     }
+}
+
+/// Why no model for `kind` can run here, or None.
+fn kind_blocker(c: &Ctx, kind: Kind) -> Option<String> {
+    let budget = c.budget_gb();
+    let models: Vec<&Model> = c.catalog.models.iter().filter(|m| m.kind == kind).collect();
+    if models.is_empty() {
+        return Some("no model in the catalog yet; run `yourai update`".into());
+    }
+    if models
+        .iter()
+        .any(|m| recommender::model_blocker(c.hw, budget, m).is_none())
+    {
+        return None;
+    }
+    let smallest = models.iter().min_by(|a, b| a.params_b.total_cmp(&b.params_b)).unwrap();
+    recommender::model_blocker(c.hw, budget, smallest)
+}
+
+fn engine_blocker(c: &Ctx, spec: &engine::EngineSpec) -> Option<String> {
+    (!engine::available(c.hw, c.catalog, spec)).then(|| format!("{} has no build for this computer yet", spec.label))
+}
+
+fn capabilities(c: &Ctx) -> Question {
+    let budget = c.budget_gb();
+    let cpu = c.cpu_only();
+    let vision_block = kind_blocker(c, Kind::Vision);
+    let defs: [(&str, &str, &str, Option<String>, bool); 6] = [
+        (
+            "agent",
+            "Read files (agent)",
+            "`yourai chat` can list and read files in the project (text, code, PDF) and use the tools you turn on below. Writing files is off until you allow it.",
+            None,
+            true,
+        ),
+        (
+            "vision",
+            "See images and hear audio",
+            "Picks a chat model that understands pictures (and, with omni models, audio). Attach files with /image and /audio in `yourai chat`.",
+            vision_block.clone(),
+            budget >= 8.0 && vision_block.is_none(),
+        ),
+        (
+            "image",
+            "Create images",
+            "Make pictures from a text description. Runs only while you use it.",
+            engine_blocker(c, &engine::SD).or_else(|| kind_blocker(c, Kind::Image)),
+            !cpu && budget >= 8.0,
+        ),
+        (
+            "stt",
+            "Speech to text",
+            "Turn recordings into text with Whisper (many languages).",
+            engine_blocker(c, &engine::WHISPER).or_else(|| kind_blocker(c, Kind::Stt)),
+            budget >= 6.0,
+        ),
+        (
+            "tts",
+            "Text to speech",
+            "Read answers aloud and save them as WAV files.",
+            kind_blocker(c, Kind::Tts),
+            !cpu && budget >= 8.0,
+        ),
+        (
+            "video",
+            "Create short videos",
+            "A few seconds of video from a text description. Slow: minutes per clip even on a good GPU.",
+            engine_blocker(c, &engine::SD).or_else(|| kind_blocker(c, Kind::Video)),
+            !cpu && budget >= 20.0,
+        ),
+    ];
+    let mut options = Vec::new();
+    let mut selected = Vec::new();
+    for (i, (value, label, explain, blocker, recommend)) in defs.into_iter().enumerate() {
+        if recommend && blocker.is_none() {
+            selected.push(i);
+        }
+        options.push(Opt::new(value, label, explain).unavailable_if(blocker));
+    }
+    let reason = if cpu {
+        "Recommended for a computer without a usable GPU: the light capabilities that stay fast on the CPU.".to_string()
+    } else {
+        format!(
+            "Recommended for {budget:.0} GB of {}: everything that runs comfortably on it.",
+            c.memory_word()
+        )
+    };
+    Question {
+        multi: Some(selected),
+        key: "capabilities",
+        title: "What else should it be able to do?".into(),
+        why: "Pick any. Each one adds a download; image, video, and speech engines only load while you use them. Change them later in yourai.toml.".into(),
+        options,
+        recommended: 0,
+        reason,
+    }
+}
+
+fn cap_model(c: &Ctx, cap: Capability) -> Option<Question> {
+    let value = CAP_VALUES.iter().find(|(_, k)| *k == cap)?.0;
+    if !c.answers.has_cap(value) {
+        return None;
+    }
+    let budget = c.budget_gb();
+    let chat_gb = c
+        .catalog
+        .model(&c.answers.model)
+        .and_then(|m| m.memory_gb(&c.answers.quant, c.answers.ctx_tokens()))
+        .unwrap_or(0.0);
+    let mut models: Vec<&Model> = c.catalog.models_of(cap.kind()).collect();
+    models.sort_by(|a, b| a.params_b.total_cmp(&b.params_b));
+    let rec = recommender::recommend_cap_model(c.hw, c.catalog, cap, budget, budget - chat_gb);
+    let options: Vec<Opt> = models
+        .iter()
+        .map(|m| {
+            let q = m.default_quant();
+            let dl = m.download_gb(q).unwrap_or(0.0);
+            let mem = m.memory_gb(q, 0).unwrap_or(0.0);
+            Opt::new(
+                m.id.clone(),
+                format!("{} ({:.1} GB)", m.name, dl),
+                format!("Uses about {mem:.1} GB while working. License: {}.", m.license),
+            )
+            .unavailable_if(recommender::model_blocker(c.hw, budget, m))
+        })
+        .collect();
+    let recommended = rec.map(|m| pick(&options, &m.id)).unwrap_or(0);
+    let reason = match rec {
+        Some(m) if m.memory_gb(m.default_quant(), 0).unwrap_or(0.0) + chat_gb <= budget => format!(
+            "Recommended because it fits next to the chat model in your {budget:.1} GB of {}.",
+            c.memory_word()
+        ),
+        Some(_) => "Recommended because it is the lightest choice; the chat model may slow down while it runs.".into(),
+        None => "No model fits this computer.".into(),
+    };
+    let (title, why) = match cap {
+        Capability::Image => (
+            "Which image model?",
+            "Bigger models draw better pictures but take longer.",
+        ),
+        Capability::Video => (
+            "Which video model?",
+            "Video models are large; a short clip takes minutes.",
+        ),
+        Capability::SpeechToText => (
+            "Which speech-to-text model?",
+            "Bigger Whisper models make fewer mistakes but are slower.",
+        ),
+        Capability::TextToSpeech => ("Which voice model?", "The model that reads text aloud."),
+    };
+    Some(Question {
+        multi: None,
+        key: cap_question(cap),
+        title: title.into(),
+        why: why.into(),
+        options,
+        recommended,
+        reason,
+    })
 }
 
 fn tier_explain(size: &str) -> &'static str {
@@ -126,14 +300,10 @@ fn model(c: &Ctx) -> anyhow::Result<Question> {
         c.answers.goal.as_str()
     };
     let budget = c.budget_gb();
-    let mut models: Vec<_> = c
-        .catalog
-        .models
-        .iter()
-        .filter(|m| m.tags.iter().any(|t| t == goal))
-        .collect();
+    let vision = c.answers.has_cap("vision");
+    let mut models = recommender::chat_models(c.catalog, goal, vision);
     models.sort_by(|a, b| a.params_b.total_cmp(&b.params_b));
-    let rec = recommender::recommend_model(c.hw, c.catalog, goal, budget).ok_or_else(|| {
+    let rec = recommender::recommend_model(c.hw, c.catalog, goal, budget, vision).ok_or_else(|| {
         crate::error::CliError::new(
             crate::error::Exit::Resources,
             format!(
@@ -170,6 +340,7 @@ fn model(c: &Ctx) -> anyhow::Result<Question> {
         reason.push_str(" Without a usable GPU, bigger models would fit but answer too slowly.");
     }
     Ok(Question {
+        multi: None,
         key: "model",
         title: "Which model?".into(),
         why: "The model is the AI's brain. Bigger models answer better but need more memory and are slower.".into(),
@@ -228,6 +399,7 @@ fn quant(c: &Ctx) -> Option<Question> {
         ),
     };
     Some(Question {
+        multi: None,
         key: "quant",
         title: "Which quantization? (compression level)".into(),
         why: "Quantization shrinks the model so it fits in memory. Lower numbers are smaller and faster but slightly less accurate.".into(),
@@ -249,6 +421,7 @@ fn runtime(c: &Ctx) -> Question {
         "needs an NVIDIA GPU on Linux, and is planned for a later version".to_string()
     };
     Question {
+        multi: None,
         key: "runtime",
         title: "Which runtime? (the engine that runs the model)".into(),
         why: "The runtime loads the model and serves answers.".into(),
@@ -311,6 +484,7 @@ fn ctx(c: &Ctx) -> Question {
         _ => "Recommended because memory is tight with this model.".to_string(),
     };
     Question {
+        multi: None,
         key: "ctx",
         title: "Context length (how much text the AI can remember at once)".into(),
         why: "Longer context lets the AI handle bigger documents and longer chats, but uses more memory.".into(),
@@ -335,6 +509,7 @@ fn interface(c: &Ctx) -> Question {
     ];
     let code = c.answers.goal == "code";
     Question {
+        multi: None,
         key: "interface",
         title: "How will you use it?".into(),
         why: "Both options only listen on this computer unless you change network access next.".into(),
@@ -348,51 +523,9 @@ fn interface(c: &Ctx) -> Question {
     }
 }
 
-fn features(c: &Ctx) -> Question {
-    let ft = if c.cpu_only() || c.budget_gb() < 12.0 {
-        format!(
-            "needs 12 GB+ of GPU memory (you have {:.0} GB) and is coming later",
-            c.budget_gb()
-        )
-    } else {
-        "coming in a later version".into()
-    };
-    Question {
-        key: "features",
-        title: "Extra features".into(),
-        why: "Optional add-ons. You can turn them on later in yourai.toml when they ship.".into(),
-        options: vec![
-            Opt::new(
-                "none",
-                "No extras for now",
-                "Keep it simple. Nothing extra is downloaded.",
-            ),
-            Opt::new(
-                "rag",
-                "Document search (RAG)",
-                "Lets the AI use your files. Adds about 1-2 GB of downloads.",
-            )
-            .unavailable_if(Some("coming in a later version".into())),
-            Opt::new(
-                "finetune",
-                "Fine-tuning tools",
-                "Installs training libraries (several GB).",
-            )
-            .unavailable_if(Some(ft)),
-            Opt::new(
-                "autostart",
-                "Auto-start on login",
-                "Starts your AI when the computer starts.",
-            )
-            .unavailable_if(Some("coming in a later version".into())),
-        ],
-        recommended: 0,
-        reason: "Recommended: start simple, add features later.".into(),
-    }
-}
-
 fn access() -> Question {
     Question {
+        multi: None,
         key: "access",
         title: "Who can connect to the server? (network access)".into(),
         why: "Controls whether other devices can reach your AI.".into(),
@@ -437,6 +570,7 @@ fn port(c: &Ctx) -> Question {
     ));
     let recommended = if free { 0 } else { 1 };
     Question {
+        multi: None,
         key: "port",
         title: "Port".into(),
         why: "The local address your AI listens on, like http://127.0.0.1:8080.".into(),
@@ -477,13 +611,15 @@ mod tests {
                     let Some(q) = build(key, &c).unwrap() else { continue };
                     let rec = q.recommended_opt();
                     assert!(
-                        rec.unavailable.is_none(),
+                        rec.unavailable.is_none() || q.multi.is_some(),
                         "{name}/{goal}/{key}: recommended `{}` is unavailable",
                         rec.value
                     );
+                    for i in q.multi.iter().flatten() {
+                        assert!(q.options[*i].unavailable.is_none(), "{name}/{goal}/{key}: {i}");
+                    }
                     assert!(q.recommended < q.options.len());
-                    let v = rec.value.clone();
-                    answers.set(key, v);
+                    answers.set(key, q.recommended_value());
                 }
             }
         }
