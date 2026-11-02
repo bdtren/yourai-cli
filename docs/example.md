@@ -458,6 +458,46 @@ The key is never written to `yourai.toml`. Requests without it get `401`; reques
 with `Authorization: Bearer <key>` work. The 7B model is already downloaded, so `build`
 only takes a second.
 
+## 13b. Deploy to a VPS or expose this PC: `yourai deploy`
+
+Later he wants classmates off-campus to try the tutor. In init he could have picked
+**Deploy to remote**; from an existing project he runs:
+
+```console
+$ cd ~/study-buddy
+$ yourai deploy -e
+
+Where should yourai run?
+? Choose one:
+> Build and run yourai on a remote server
+  Self-host on this PC and grant remote access via an IP
+```
+
+**Mode A — remote server:** he already has a DigitalOcean droplet. The wizard asks for
+`root@DROPLET_IP`, generates `~/.ssh/id_ed25519_yourai` if needed, prints the public key
+and the DigitalOcean Security URL, waits until `ssh` works, then installs yourai on the
+droplet, syncs the project, builds, and starts. He opens TCP 8080 on the cloud firewall and
+opens `http://DROPLET_IP:8080` with the API key. Optional Cloudflare DNS is only a checklist
+after that (grey-cloud A record, then Full SSL with Caddy) — not a third place to run the model.
+
+**Mode B — this PC + IP:** he keeps the model on the Mac. Deploy sets `server.host = 0.0.0.0`,
+requires an API key, prints `http://LAN_IP:8080`, firewall tips, and offers `cloudflared` if
+there is no usable public IP / port-forward.
+
+```console
+$ yourai deploy --dry-run
+• [dry-run] would set server.require_api_key=true and server.host=0.0.0.0
+✔ Wrote study-buddy/.yourai/deploy-README.md
+```
+
+Settings stay in `.yourai/deploy.toml`. Non-interactive init writes a stub:
+
+```console
+$ yourai init --yes --name buddy-remote --access remote --model qwen2.5-7b
+• Wrote a deploy stub in .yourai/deploy.toml (non-interactive init).
+Next: cd buddy-remote && yourai deploy -e
+```
+
 ## 14. Keep things fresh: `yourai update` and `yourai self-update`
 
 ```console
@@ -520,5 +560,6 @@ He keeps the models, so reinstalling next semester needs no downloads.
 | 11 | `yourai pause`, `resume` | Freed memory, then reloaded |
 | 12 | `yourai logs` | Looked at the server log |
 | 13 | `init --access lan` | Reached it from his phone with an API key |
+| 13b | `yourai deploy -e` | Remote VPS (SSH) or expose this PC over an IP |
 | 14 | `yourai update`, `self-update` | Checked for newer engines, models, and CLI |
 | 15 | `yourai stop`, `uninstall` | Stopped it and removed the CLI, kept models |

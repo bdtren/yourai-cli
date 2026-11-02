@@ -2,6 +2,7 @@ pub mod agent;
 pub mod build;
 pub mod chat;
 pub mod config;
+pub mod deploy;
 pub mod doctor;
 pub mod init;
 pub mod lifecycle;
@@ -36,6 +37,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
         Command::Rebuild { accept_license, force } => rebuild::run(&project()?, accept_license, opts(force)),
         Command::Update { engine, model, force } => update::run(explicit.as_deref(), engine, model, opts(force)),
         Command::SelfUpdate { check } => self_update::run(check),
+        Command::Deploy(args) => deploy::run(&project()?, args),
         Command::Uninstall => uninstall::run(),
         Command::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "yourai", &mut std::io::stdout());

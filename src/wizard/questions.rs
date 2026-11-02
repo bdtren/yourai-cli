@@ -540,6 +540,11 @@ fn access() -> Question {
                 "Other devices on my network (0.0.0.0)",
                 "Lets your phone or other computers connect. An API key is generated and required.",
             ),
+            Opt::new(
+                "remote",
+                "Deploy to remote",
+                "After creating the project, walk through running on a VPS or exposing this PC over an IP.",
+            ),
         ],
         recommended: 0,
         reason: "Recommended always: the secure default. You can change it later.".into(),
@@ -623,6 +628,15 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn access_includes_remote_deploy_option() {
+        let q = access();
+        assert!(q.find("local").is_some());
+        assert!(q.find("lan").is_some());
+        assert!(q.find("remote").is_some());
+        assert_eq!(q.find("remote").unwrap().label, "Deploy to remote");
     }
 
     #[test]

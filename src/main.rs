@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod core;
+mod deploy;
 mod error;
 mod ui;
 mod wizard;

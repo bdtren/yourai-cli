@@ -310,3 +310,84 @@ fn completions_print() {
         .success()
         .stdout(predicate::str::contains("yourai"));
 }
+
+#[test]
+fn remote_access_writes_deploy_stub_under_yes() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    yourai(&home, t.path())
+        .args([
+            "init",
+            "--yes",
+            "--name",
+            "remote-demo",
+            "--model",
+            "qwen2.5-0.5b",
+            "--access",
+            "remote",
+            "--port",
+            "18767",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("deploy stub").and(predicate::str::contains("yourai deploy -e")));
+    let proj = t.path().join("remote-demo");
+    let stub = std::fs::read_to_string(proj.join(".yourai/deploy.toml")).unwrap();
+    assert!(stub.contains("incomplete = true"));
+    assert!(proj.join(".yourai/deploy-README.md").is_file());
+    let toml = std::fs::read_to_string(proj.join("yourai.toml")).unwrap();
+    assert!(toml.contains("host = \"127.0.0.1\""));
+}
+
+#[test]
+fn deploy_dry_run_local_expose_from_saved_config() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    yourai(&home, t.path())
+        .args([
+            "init",
+            "--yes",
+            "--name",
+            "expose-demo",
+            "--model",
+            "qwen2.5-0.5b",
+            "--port",
+            "18768",
+        ])
+        .assert()
+        .success();
+    let proj = t.path().join("expose-demo");
+    std::fs::write(
+        proj.join(".yourai/deploy.toml"),
+        r#"
+version = 1
+mode = "local_expose"
+expose_via = "ip"
+"#,
+    )
+    .unwrap();
+    yourai(&home, &proj)
+        .args(["deploy", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Local expose")
+                .and(predicate::str::contains("[dry-run]"))
+                .and(predicate::str::contains("0.0.0.0")),
+        );
+    assert!(proj.join(".yourai/deploy-README.md").is_file());
+}
+
+#[test]
+fn deploy_help_lists_edit_and_dry_run() {
+    let t = tempfile::tempdir().unwrap();
+    yourai(t.path(), t.path())
+        .args(["deploy", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("--edit")
+                .and(predicate::str::contains("--dry-run"))
+                .and(predicate::str::contains("remote")),
+        );
+}

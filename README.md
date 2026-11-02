@@ -88,6 +88,25 @@ yourai init --yes --name studio --capabilities agent,image,stt,tts --image-model
 cd my-ai && yourai build --accept-license && yourai start
 ```
 
+### Deploy (remote VPS or expose this PC)
+
+In `yourai init`, choose **Deploy to remote** under network access (or pass `--access remote`).
+After the project is created, the deploy wizard asks where yourai should run:
+
+1. **Build and run on a remote server** — SSH into an existing droplet/VPS, install yourai, sync the project, build, and start. You get `http://SERVER_IP:port` plus firewall notes.
+2. **Self-host on this PC + remote IP access** — bind `0.0.0.0`, require an API key, print LAN/public URLs, firewall hints, and optional `cloudflared` / Tailscale if you have no public IP.
+
+Cloudflare is only an optional DNS/HTTPS checklist afterward (not a place to run the model).
+
+```sh
+yourai deploy           # wizard if needed; else run the saved mode
+yourai deploy -e        # re-run the wizard (overwrites .yourai/deploy.toml)
+yourai deploy --dry-run # print steps without SSH / start
+```
+
+Settings live in `.yourai/deploy.toml`; browser/firewall steps are copied to `.yourai/deploy-README.md`.
+With `yourai init --yes --access remote`, a stub is written and you finish with `yourai deploy -e`.
+
 With capabilities turned on:
 
 ```sh
@@ -119,6 +138,7 @@ at a time.
 | `speak <text> [--out FILE]` | Text to speech, saved as WAV (needs `[text_to_speech]`) |
 | `transcribe <file> [--out FILE]` | Speech to text (needs `[speech_to_text]`) |
 | `config show\|get\|set\|edit\|validate` | Read or change `yourai.toml` safely |
+| `deploy [-e] [--dry-run]` | Run yourai on a remote VPS (SSH) or expose this PC over an IP (optional tunnel/DNS) |
 | `rebuild [-s] [-f]` | Apply config changes, redoing only what changed |
 | `update [--engine] [--model] [-s] [-f]` | Refresh the model catalog and apply updates |
 | `self-update [--check]` | Update the CLI itself |
@@ -139,7 +159,7 @@ my-ai/
 ├── outputs/             # images, videos, and audio you create
 ├── scripts/             # start/stop helpers for sh and PowerShell
 ├── README.md
-└── .yourai/             # runtime state, logs, secrets (git-ignored)
+└── .yourai/             # runtime state, logs, secrets, deploy.toml (git-ignored)
 ```
 
 Models and engines live in `yourai_modules/` for this project. Delete that folder anytime,
@@ -225,7 +245,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.4`).
+Checklist of product features. Checked items ship in this version (`0.0.6`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
@@ -274,6 +294,7 @@ Checklist of product features. Checked items ship in this version (`0.0.4`).
 ### Privacy and network
 - [x] Default bind to `127.0.0.1`
 - [x] LAN mode with generated API key (secrets file, not `yourai.toml`)
+- [x] `deploy` — remote VPS (SSH) or expose this PC over an IP; optional tunnel/DNS checklist
 - [x] Daily CLI update check with `YOURAI_NO_UPDATE_CHECK` opt-out
 - [ ] Auto-start on login
 

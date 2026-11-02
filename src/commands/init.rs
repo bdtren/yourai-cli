@@ -121,6 +121,9 @@ impl Wizard<'_> {
         if key == "access" && value == "lan" {
             ui::warn("Other devices on your network will be able to reach this AI. An API key will be generated and required.");
         }
+        if key == "access" && value == "remote" {
+            ui::info("After the project is created, the deploy wizard will help you run on a remote server or expose this PC.");
+        }
         self.answers.set(key, value);
         Ok(true)
     }
@@ -303,6 +306,7 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
 
     let a = &w.answers;
     let lan = a.access == "lan";
+    let remote = a.access == "remote";
     let budget = hardware::budget_gb(&w.hw);
     // Disabled capabilities still get the recommended model, so turning one on later
     // is a single `yourai config set <table>.enabled true`.
@@ -394,7 +398,26 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             secrets::redact(&k)
         ));
     }
-    ui::next(format!("cd {} && yourai build && yourai start", dir.display()));
+    if remote {
+        let proj = project::Project { root: dir.clone() };
+        if yes {
+            crate::deploy::config::write_stub(&proj)?;
+            ui::info("Wrote a deploy stub in .yourai/deploy.toml (non-interactive init).");
+            ui::next(format!(
+                "cd {} && yourai deploy -e   # finish remote / local-expose setup",
+                dir.display()
+            ));
+        } else {
+            ui::heading("Deploy");
+            crate::deploy::run_wizard(&proj, false)?;
+            ui::next(format!(
+                "cd {} && yourai build && yourai start   # or follow deploy steps above",
+                dir.display()
+            ));
+        }
+    } else {
+        ui::next(format!("cd {} && yourai build && yourai start", dir.display()));
+    }
     Ok(())
 }
 

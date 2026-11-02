@@ -9,7 +9,8 @@ use clap::{ArgAction, Args, Parser, Subcommand};
     about = "Build and run your own local AI",
     long_about = "Build and run your own local AI.\n\n\
         Typical flow:\n  yourai doctor      check this computer\n  yourai init        create a project with a guided wizard\n  \
-        cd my-ai && yourai build && yourai start\n  yourai chat        talk to it in the terminal",
+        cd my-ai && yourai build && yourai start\n  yourai chat        talk to it in the terminal\n  \
+        yourai deploy     run on a VPS or expose this PC over an IP",
     disable_version_flag = true,
     propagate_version = true
 )]
@@ -138,6 +139,14 @@ pub enum Command {
         check: bool,
     },
 
+    /// Configure remote run or expose this PC over an IP (SSH / tunnel / DNS helpers)
+    #[command(
+        after_help = "First chooses where yourai runs: on a remote VPS (SSH) or on this PC with remote IP access.\n\
+        Cloudflare is an optional DNS/HTTPS step afterward, not a separate run target.\n\n\
+        Examples:\n  yourai deploy\n  yourai deploy -e\n  yourai deploy --dry-run"
+    )]
+    Deploy(DeployArgs),
+
     /// Remove the yourai CLI (asks separately about models and engines)
     Uninstall,
 
@@ -251,7 +260,7 @@ pub struct InitArgs {
     /// Interface: webui | api
     #[arg(long)]
     pub interface: Option<String>,
-    /// Network access: local | lan
+    /// Network access: local | lan | remote
     #[arg(long)]
     pub access: Option<String>,
     /// Port for the local server
@@ -275,6 +284,16 @@ pub struct InitArgs {
     /// Text-to-speech model id, for example qwen3-tts-1.7b
     #[arg(long)]
     pub tts_model: Option<String>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct DeployArgs {
+    /// Re-run the deploy wizard (overwrites `.yourai/deploy.toml` after confirm)
+    #[arg(short = 'e', long = "edit")]
+    pub edit: bool,
+    /// Print planned steps without running SSH, sync, or start
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Subcommand, Debug)]

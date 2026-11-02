@@ -1,6 +1,6 @@
 {
   "name": "@yourai/cli-linux-x64",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "The yourai binary for linux-x64 (installed automatically by the yourai package)",
   "homepage": "https://yourai.bdtren.com",
   "repository": {
