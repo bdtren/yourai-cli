@@ -1,6 +1,6 @@
 {
   "name": "@yourai/cli",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Build and run your own local AI",
   "homepage": "https://yourai.bdtren.com",
   "repository": {
@@ -24,12 +24,12 @@
     "cli"
   ],
   "optionalDependencies": {
-    "@yourai/cli-darwin-arm64": "0.0.6",
-    "@yourai/cli-darwin-x64": "0.0.6",
-    "@yourai/cli-linux-x64": "0.0.6",
-    "@yourai/cli-linux-arm64": "0.0.6",
-    "@yourai/cli-win32-x64": "0.0.6",
-    "@yourai/cli-win32-arm64": "0.0.6"
+    "@yourai/cli-darwin-arm64": "0.0.7",
+    "@yourai/cli-darwin-x64": "0.0.7",
+    "@yourai/cli-linux-x64": "0.0.7",
+    "@yourai/cli-linux-arm64": "0.0.7",
+    "@yourai/cli-win32-x64": "0.0.7",
+    "@yourai/cli-win32-arm64": "0.0.7"
   },
   "license": "Apache-2.0"
 }

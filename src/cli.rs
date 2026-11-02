@@ -62,8 +62,9 @@ pub enum Command {
 
     /// Download the engine and model for this project
     #[command(
-        after_help = "Files are installed under yourai_modules/ (gitignored). yourai.lock records them.\n\n\
-        Flag combos:\n  yourai build          use ~/.yourai cache if present, else download into yourai_modules/\n  \
+        after_help = "By default files go under yourai_modules/ (gitignored). Set store.project_modules = false\n\
+        to install and run from ~/.yourai only. yourai.lock records the paths.\n\n\
+        Flag combos (project_modules = true):\n  yourai build          use ~/.yourai cache if present, else download into yourai_modules/\n  \
         yourai build -s       same, and also write new downloads into ~/.yourai\n  \
         yourai build -f       always download online into yourai_modules/\n  \
         yourai build -f -s    download online and update the saved ~/.yourai copy\n\n\
@@ -260,6 +261,9 @@ pub struct InitArgs {
     /// Interface: webui | api
     #[arg(long)]
     pub interface: Option<String>,
+    /// API styles, comma separated: openai, claude, gemini
+    #[arg(long)]
+    pub api_styles: Option<String>,
     /// Network access: local | lan | remote
     #[arg(long)]
     pub access: Option<String>,

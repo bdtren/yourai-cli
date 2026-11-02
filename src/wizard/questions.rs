@@ -20,6 +20,7 @@ pub const ORDER: &[&str] = &[
     "stt_model",
     "tts_model",
     "interface",
+    "api_styles",
     "access",
     "port",
 ];
@@ -56,6 +57,7 @@ pub fn build(key: &str, c: &Ctx) -> anyhow::Result<Option<Question>> {
         "stt_model" => cap_model(c, Capability::SpeechToText),
         "tts_model" => cap_model(c, Capability::TextToSpeech),
         "interface" => Some(interface(c)),
+        "api_styles" => Some(api_styles()),
         "access" => Some(access()),
         "port" => Some(port(c)),
         _ => None,
@@ -520,6 +522,35 @@ fn interface(c: &Ctx) -> Question {
             "Recommended for most people: chat in the browser, no setup.".into()
         },
         options,
+    }
+}
+
+fn api_styles() -> Question {
+    let options = vec![
+        Opt::new(
+            "openai",
+            "GPT (OpenAI) — SSE + WebSocket",
+            "OpenAI Chat Completions under /v1/chat/completions (SSE) and /v1/chat/ws (WebSocket). Scaffold api/openai/ and api/realtime/.",
+        ),
+        Opt::new(
+            "claude",
+            "Claude (Anthropic) — SSE",
+            "Anthropic Messages API under /v1/messages with SSE streaming. Scaffold api/claude/.",
+        ),
+        Opt::new(
+            "gemini",
+            "Gemini — SSE",
+            "Gemini generateContent under /v1/models/… with SSE streaming. Scaffold api/gemini/.",
+        ),
+    ];
+    Question {
+        multi: Some(vec![0]),
+        key: "api_styles",
+        title: "Which API styles should this project speak?".into(),
+        why: "All styles use the /v1/ prefix so you can add your own /v2/ later. Pick any combination.".into(),
+        options,
+        recommended: 0,
+        reason: "Recommended: OpenAI is the most widely supported client format.".into(),
     }
 }
 

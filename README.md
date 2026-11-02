@@ -70,14 +70,15 @@ yourai chat            # talk to it in the terminal
 ```
 
 `yourai start` prints the browser address (by default <http://127.0.0.1:8080>) and the API
-base URL (`http://127.0.0.1:8080/v1`). It only starts after `yourai build` has created
-`yourai_modules/` and a root `yourai.lock` pointing there (files only in `~/.yourai` are not
-enough). If the configured port is busy, an interactive start asks whether to use the next free
-port and writes `server.port` into `yourai.toml`.
+base URL (`http://127.0.0.1:8080/v1`). It only starts after `yourai build` has written a root
+`yourai.lock` that matches `[store] project_modules` (default: paths under `yourai_modules/`).
+If the port is busy, an interactive start asks whether to use the next free port and writes
+`server.port` into `yourai.toml`.
 
-Browser chat uses llama.cpp’s WebUI. A slow or interrupted reply can show
-“Stream resume produced no new bytes” — prefer `yourai chat`, or retry. Local models cannot
-fetch live weather or other web data without a tool.
+New projects get an editable `web/` chat page. When `server.web_ui = true` and
+`web/index.html` exists, the gateway serves that folder (llama.cpp’s WebUI is disabled).
+Without a project UI, the llama WebUI is still proxied. Local models cannot fetch live weather
+or other web data without a tool.
 
 Non-interactive setup (for scripts and CI):
 
@@ -127,7 +128,7 @@ at a time.
 | --- | --- |
 | `doctor [--network] [--fix]` | Check CPU, RAM, GPU, disk, ports, and what models fit |
 | `init [DIR]` | Guided wizard that creates a project folder |
-| `build [-s] [-f] [--accept-license]` | Download into `yourai_modules/` (`-s` also saves to `~/.yourai`, `-f` forces a network download) |
+| `build [-s] [-f] [--accept-license]` | Download models/engines (`yourai_modules/` by default; `-s` also saves to `~/.yourai`, `-f` forces a network download) |
 | `start` / `stop` | Start or stop the AI in the background |
 | `pause` / `resume` | Unload the model to free memory, then load it again |
 | `status` | Running state, port, model, and memory use |
@@ -154,6 +155,8 @@ my-ai/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # which models/engines this project uses (commit this)
 ├── yourai_modules/       # downloaded models and engines (git-ignored, like node_modules)
+├── web/                 # editable browser chat
+├── api/                 # HTTP/SSE (+ OpenAI WS) examples for chosen api_styles
 ├── prompts/system.md    # the system prompt
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio you create
@@ -162,15 +165,25 @@ my-ai/
 └── .yourai/             # runtime state, logs, secrets, deploy.toml (git-ignored)
 ```
 
-Models and engines live in `yourai_modules/` for this project. Delete that folder anytime,
-then run `yourai build` to restore it. Pass `-s` / `--save` to also keep a copy in
-`~/.yourai` so other projects can fast-copy it; pass `-f` / `--force` to download from the
-network instead of using that cache (`-f -s` refreshes the saved copy).
+By default models and engines live in `yourai_modules/`. Delete that folder anytime, then run
+`yourai build` to restore it. Pass `-s` / `--save` to also keep a copy in `~/.yourai` so other
+projects can fast-copy it; pass `-f` / `--force` to download from the network instead of using
+that cache (`-f -s` refreshes the saved copy). Set `store.project_modules = false` to skip the
+project module folder and install/run from `~/.yourai` only.
 
 ## API
 
-Besides the llama.cpp endpoints (`/v1/chat/completions`, `/v1/models`, …), the same port
-serves OpenAI-style media endpoints for the enabled capabilities:
+`server.api_styles` (set in `yourai init` or `yourai config set`) chooses chat dialects, all under `/v1/`:
+
+| Style | Transport | Routes |
+| --- | --- | --- |
+| `openai` | HTTP SSE + WebSocket | `/v1/chat/completions`, `/v1/chat/ws` |
+| `claude` | HTTP SSE | `/v1/messages` |
+| `gemini` | HTTP SSE | `/v1/models/{model}:generateContent`, `:streamGenerateContent` |
+
+Examples are scaffolded into `api/openai/`, `api/realtime/` (WS), `api/claude/`, and `api/gemini/` as selected.
+
+The same port also serves OpenAI-style media endpoints for enabled capabilities:
 
 | Endpoint | Capability |
 | --- | --- |
@@ -217,7 +230,7 @@ Vision models accept OpenAI `image_url` and `input_audio` content parts in chat 
 
 | Variable | Purpose |
 | --- | --- |
-| `YOURAI_HOME` | Optional shared cache folder used with `yourai build -s` (default `~/.yourai`) |
+| `YOURAI_HOME` | Shared store/cache (default `~/.yourai`); used with `yourai build -s`, or as the only install root when `store.project_modules = false` |
 | `YOURAI_PROJECT` | Project folder, instead of searching up from the current folder |
 | `YOURAI_API_KEY` | API key for LAN mode, instead of `.yourai/secrets.toml` |
 | `YOURAI_BASE_URL` | Where releases and the catalog are served (default `https://yourai.bdtren.com/cli`) |
@@ -245,7 +258,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.6`).
+Checklist of product features. Checked items ship in this version (`0.0.7`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
@@ -256,8 +269,10 @@ Checklist of product features. Checked items ship in this version (`0.0.6`).
 - [x] `start` / `stop` / `status` / `logs`
 - [x] `pause` / `resume` (unload model to free memory)
 - [x] Terminal `chat` (`/reset`, `/exit`, `/help`)
-- [x] Browser chat page (llama.cpp web UI)
-- [x] OpenAI-compatible API on `localhost` (`/v1`)
+- [x] Browser chat page (project `web/` UI, with llama.cpp WebUI fallback)
+- [x] `[store] project_modules` — project-local modules (default) or shared `~/.yourai` only
+- [x] OpenAI-compatible API on `localhost` (`/v1`) plus optional Claude/Gemini adapters
+- [x] OpenAI chat WebSocket (`/v1/chat/ws`) and `api/realtime/` scaffold
 - [x] `config show|get|set|edit|validate` (preserves TOML comments)
 - [x] Smart `rebuild` (only redo what changed)
 - [x] `update` catalog / `--engine` / `--model`

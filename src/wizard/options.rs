@@ -88,6 +88,8 @@ pub struct Answers {
     pub stt_model: String,
     pub tts_model: String,
     pub interface: String,
+    /// Comma list of API styles: openai, claude, gemini.
+    pub api_styles: String,
     pub access: String,
     pub port: String,
 }
@@ -107,6 +109,7 @@ impl Answers {
             "stt_model" => &self.stt_model,
             "tts_model" => &self.tts_model,
             "interface" => &self.interface,
+            "api_styles" => &self.api_styles,
             "access" => &self.access,
             "port" => &self.port,
             _ => "",
@@ -127,10 +130,23 @@ impl Answers {
             "stt_model" => self.stt_model = v,
             "tts_model" => self.tts_model = v,
             "interface" => self.interface = v,
+            "api_styles" => self.api_styles = v,
             "access" => self.access = v,
             "port" => self.port = v,
             _ => {}
         }
+    }
+
+    pub fn api_style_list(&self) -> Vec<String> {
+        if self.api_styles.is_empty() || self.api_styles == "none" {
+            return vec!["openai".into()];
+        }
+        self.api_styles
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && *s != "none")
+            .map(str::to_string)
+            .collect()
     }
 
     pub fn has_cap(&self, cap: &str) -> bool {

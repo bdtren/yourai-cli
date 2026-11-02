@@ -347,12 +347,16 @@ pub struct Bind<'a> {
 
 /// Command-line arguments for llama-server. The API key is passed through a file,
 /// never on the command line.
+///
+/// `prefer_project_ui` disables llama.cpp's WebUI when the gateway will serve the
+/// project's `web/` folder instead.
 pub fn llama_args(
     cfg: &Config,
     model_path: &Path,
     mmproj: Option<&Path>,
     bind: Bind,
     api_key_file: Option<&Path>,
+    prefer_project_ui: bool,
 ) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "-m".into(),
@@ -377,11 +381,9 @@ pub fn llama_args(
     if cfg.runtime.threads > 0 {
         a.extend(["-t".into(), cfg.runtime.threads.to_string()]);
     }
-    // WebUI stays on by default. Browser chat can show llama.cpp's
-    // "Stream resume produced no new bytes" when an SSE resume (`/v1/stream/...`)
-    // returns empty after a quiet or interrupted generation — prefer `yourai chat`
-    // or retry; local models also cannot fetch live weather/web data without a tool.
-    if !cfg.server.web_ui {
+    // Disable llama WebUI when the project serves its own `web/` or web_ui is off.
+    // Without a project UI, llama's page stays available (SSE resume quirks possible).
+    if !cfg.server.web_ui || prefer_project_ui {
         a.push("--no-webui".into());
     }
     if let Some(f) = api_key_file {
@@ -500,10 +502,22 @@ mod tests {
             host: "127.0.0.1",
             port: 39100,
         };
-        let args = llama_args(&cfg, Path::new("/m.gguf"), None, bind, Some(Path::new("/k")));
+        let args = llama_args(&cfg, Path::new("/m.gguf"), None, bind, Some(Path::new("/k")), false);
         assert!(args.contains(&"--api-key-file".to_string()));
         assert!(!args.contains(&"--api-key".to_string()));
         assert!(!args.contains(&"--no-webui".to_string()));
+        let with_project_ui = llama_args(
+            &cfg,
+            Path::new("/m.gguf"),
+            None,
+            Bind {
+                host: "127.0.0.1",
+                port: 39100,
+            },
+            None,
+            true,
+        );
+        assert!(with_project_ui.contains(&"--no-webui".to_string()));
     }
 
     #[test]
@@ -513,7 +527,14 @@ mod tests {
             host: "127.0.0.1",
             port: 39100,
         };
-        let a = llama_args(&cfg, Path::new("/m.gguf"), Some(Path::new("/mm.gguf")), bind, None);
+        let a = llama_args(
+            &cfg,
+            Path::new("/m.gguf"),
+            Some(Path::new("/mm.gguf")),
+            bind,
+            None,
+            false,
+        );
         let s = a.join(" ");
         assert!(s.contains("--mmproj /mm.gguf"));
         assert!(s.contains("--host 127.0.0.1 --port 39100"));

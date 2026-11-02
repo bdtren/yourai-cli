@@ -1,0 +1,23 @@
+### Chat completion (SSE)
+POST http://127.0.0.1:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "local",
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "Say hello in one short sentence." }
+  ]
+}
+
+### Chat completion (non-streaming)
+POST http://127.0.0.1:8080/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "local",
+  "stream": false,
+  "messages": [
+    { "role": "user", "content": "Count to three." }
+  ]
+}

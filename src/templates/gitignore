@@ -1,6 +1,7 @@
 # YourAI runtime state, logs, and secrets
 .yourai/
-# Downloaded models and engines for this project (like node_modules)
+# Downloaded models and engines for this project (like node_modules).
+# Unused when store.project_modules = false (shared ~/.yourai only).
 yourai_modules/
 # Images, videos, and audio created by yourai
 outputs/

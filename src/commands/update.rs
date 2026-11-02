@@ -45,9 +45,9 @@ pub fn run(explicit: Option<&Path>, want_engine: bool, want_model: bool, opts: O
         return Ok(());
     };
     paths::ensure_home()?;
-    let store = Store::new(&p.root, opts);
-    store.ensure_dirs()?;
     let cfg = p.config()?;
+    let store = Store::new(&p.root, opts, cfg.store.project_modules);
+    store.ensure_dirs()?;
     let Some(mut lk) = p.lock() else {
         ui::info("this project has not been built yet; `yourai build` will use the latest versions");
         return Ok(());

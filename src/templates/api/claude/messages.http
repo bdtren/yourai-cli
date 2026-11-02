@@ -1,0 +1,27 @@
+### Messages (SSE)
+POST http://127.0.0.1:8080/v1/messages
+Content-Type: application/json
+anthropic-version: 2023-06-01
+
+{
+  "model": "local",
+  "max_tokens": 256,
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "Say hello in one short sentence." }
+  ]
+}
+
+### Messages (non-streaming)
+POST http://127.0.0.1:8080/v1/messages
+Content-Type: application/json
+
+{
+  "model": "local",
+  "max_tokens": 256,
+  "stream": false,
+  "system": "Be brief.",
+  "messages": [
+    { "role": "user", "content": "What is 2+2?" }
+  ]
+}

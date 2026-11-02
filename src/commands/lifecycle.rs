@@ -379,17 +379,27 @@ pub fn status(p: &Project) -> anyhow::Result<()> {
             None => "no, run `yourai build`".into(),
         },
     ]);
-    t.add_row(vec![
-        "Module".to_string(),
-        format!("{} (models and engines)", p.module_dir().display()),
-    ]);
-    t.add_row(vec![
-        "Shared cache".to_string(),
-        format!(
-            "{} (optional, with `yourai build -s`)",
-            crate::core::paths::home().display()
-        ),
-    ]);
+    if cfg.store.project_modules {
+        t.add_row(vec![
+            "Module".to_string(),
+            format!("{} (models and engines)", p.module_dir().display()),
+        ]);
+        t.add_row(vec![
+            "Shared cache".to_string(),
+            format!(
+                "{} (optional, with `yourai build -s`)",
+                crate::core::paths::home().display()
+            ),
+        ]);
+    } else {
+        t.add_row(vec![
+            "Store".to_string(),
+            format!(
+                "{} (shared; store.project_modules = false)",
+                crate::core::paths::home().display()
+            ),
+        ]);
+    }
     t.add_row(vec![
         "Address".to_string(),
         format!("{}  (API: {}/v1)", cfg.server.local_url(), cfg.server.local_url()),

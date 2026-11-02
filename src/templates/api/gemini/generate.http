@@ -1,0 +1,21 @@
+### generateContent
+POST http://127.0.0.1:8080/v1/models/local:generateContent
+Content-Type: application/json
+
+{
+  "contents": [
+    { "role": "user", "parts": [{ "text": "Say hello in one short sentence." }] }
+  ]
+}
+
+### streamGenerateContent (SSE)
+POST http://127.0.0.1:8080/v1/models/local:streamGenerateContent
+Content-Type: application/json
+
+{
+  "systemInstruction": { "parts": [{ "text": "Be brief." }] },
+  "contents": [
+    { "role": "user", "parts": [{ "text": "What is 2+2?" }] }
+  ],
+  "generationConfig": { "temperature": 0.2, "maxOutputTokens": 128 }
+}

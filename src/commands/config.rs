@@ -117,6 +117,15 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
     } else {
         (None, parts[0])
     };
+    let creatable = matches!(
+        key,
+        "model.repo" | "model.file" | "store.project_modules" | "server.ui_dir" | "server.api_styles"
+    );
+    if let Some(t) = table {
+        if doc.get(t).is_none() && t == "store" && creatable {
+            doc.insert(t, Item::Table(toml_edit::Table::new()));
+        }
+    }
     let container = match table {
         Some(t) => doc
             .get_mut(t)
@@ -125,7 +134,6 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
         None => doc.as_table_mut(),
     };
     let existing = container.get(leaf).and_then(Item::as_value).cloned();
-    let creatable = matches!(key, "model.repo" | "model.file");
     let new_value = match existing {
         Some(Value::Integer(_)) => raw
             .parse::<i64>()
@@ -148,6 +156,17 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
             Value::Array(arr)
         }
         Some(_) => return Err(type_err(key, "a simple value")),
+        None if key == "store.project_modules" => raw
+            .parse::<bool>()
+            .map(Value::from)
+            .map_err(|_| type_err(key, "true or false"))?,
+        None if key == "server.api_styles" => {
+            let mut arr = toml_edit::Array::new();
+            for s in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                arr.push(s);
+            }
+            Value::Array(arr)
+        }
         None if creatable => Value::from(raw),
         None => return Err(unknown_key(key)),
     };
@@ -223,5 +242,17 @@ mod tests {
         assert!(set_value(&p, "nope.key", "1").is_err());
         assert!(set_value(&p, "server.api_key", "secret").is_err());
         assert_eq!(before, std::fs::read_to_string(p.config_path()).unwrap());
+    }
+
+    #[test]
+    fn set_store_project_modules_and_ui_dir() {
+        let (_t, p) = proj();
+        set_value(&p, "store.project_modules", "false").unwrap();
+        set_value(&p, "server.ui_dir", "frontend").unwrap();
+        set_value(&p, "server.api_styles", "openai,claude").unwrap();
+        let cfg = p.config().unwrap();
+        assert!(!cfg.store.project_modules);
+        assert_eq!(cfg.server.ui_dir, "frontend");
+        assert_eq!(cfg.server.api_styles, vec!["openai", "claude"]);
     }
 }

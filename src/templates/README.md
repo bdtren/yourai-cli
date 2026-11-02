@@ -16,7 +16,8 @@ yourai logs -f   # follow the server log
 ```
 
 When it is running, open the URL printed by `yourai start` in a browser for the chat page
-(if `server.web_ui = true`), or point any OpenAI-compatible app at `http://127.0.0.1:<port>/v1`.
+(if `server.web_ui = true`). Edit `web/` to customize that page. Or point any OpenAI-compatible
+app at `http://127.0.0.1:<port>/v1`.
 
 If you turned on capabilities in `yourai.toml`:
 
@@ -38,14 +39,17 @@ after asking, if `allow_write = true`) and use the capabilities above. Type `/he
 | `prompts/system.md` | you | The instructions the AI follows in `yourai chat`. |
 | `data/docs/` | you | Reserved for document search in a future version. |
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
+| `web/` | you | Browser chat page. Edit freely. |
+| `api/` | you | HTTP/SSE (and OpenAI WebSocket) examples for the API styles you chose. |
 | `outputs/` | yourai | Images, videos, and audio you create. Gitignored. |
 | `yourai.lock` | yourai | Which models and engines this project uses. Safe to commit. |
-| `yourai_modules/` | yourai | Downloaded models and engines for this project. Gitignored; delete anytime and run `yourai build` again. |
+| `yourai_modules/` | yourai | Downloaded models and engines for this project (when `store.project_modules = true`). Gitignored; delete anytime and run `yourai build` again. |
 | `.yourai/` | yourai | Runtime state, logs, and secrets. Gitignored; do not share. |
 
-`yourai build` installs into `yourai_modules/`. Use `yourai build -s` to also keep a copy in
-`~/.yourai` for other projects, and `yourai build -f` to download from the network instead of
-using that cache (`-f -s` updates the saved copy).
+By default `yourai build` installs into `yourai_modules/`. Use `yourai build -s` to also keep a
+copy in `~/.yourai` for other projects, and `yourai build -f` to download from the network instead
+of using that cache (`-f -s` updates the saved copy). Set `store.project_modules = false` in
+`yourai.toml` to skip `yourai_modules/` and install/run from `~/.yourai` only.
 
 ## Changing settings
 

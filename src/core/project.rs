@@ -116,10 +116,15 @@ impl Project {
     }
 
     /// Root `yourai.lock` only. Start/runtime ignore legacy `.yourai/lock.json`
-    /// and locks that still point outside `yourai_modules/`.
+    /// and locks that don't match `[store] project_modules` (module paths vs shared home).
     pub fn lock(&self) -> Option<Lock> {
         let l = lock::load(&self.lock_path())?;
-        if !self.module_dir().is_dir() || !store::lock_uses_module(&l) {
+        let project_modules = self.config().map(|c| c.store.project_modules).unwrap_or(true);
+        if project_modules {
+            if !self.module_dir().is_dir() || !store::lock_uses_module(&l) {
+                return None;
+            }
+        } else if !store::lock_uses_shared(&l) {
             return None;
         }
         Some(l)
@@ -162,6 +167,45 @@ const START_SH: &str = include_str!("../templates/start.sh");
 const STOP_SH: &str = include_str!("../templates/stop.sh");
 const START_PS1: &str = include_str!("../templates/start.ps1");
 const STOP_PS1: &str = include_str!("../templates/stop.ps1");
+const WEB_INDEX: &str = include_str!("../templates/web/index.html");
+const WEB_APP_JS: &str = include_str!("../templates/web/app.js");
+const WEB_CSS: &str = include_str!("../templates/web/styles.css");
+const WEB_API_README: &str = include_str!("../templates/web/api/README.md");
+const API_OPENAI_README: &str = include_str!("../templates/api/openai/README.md");
+const API_OPENAI_HTTP: &str = include_str!("../templates/api/openai/chat.http");
+const API_REALTIME_README: &str = include_str!("../templates/api/realtime/README.md");
+const API_REALTIME_JS: &str = include_str!("../templates/api/realtime/chat-ws.js");
+const API_CLAUDE_README: &str = include_str!("../templates/api/claude/README.md");
+const API_CLAUDE_HTTP: &str = include_str!("../templates/api/claude/messages.http");
+const API_GEMINI_README: &str = include_str!("../templates/api/gemini/README.md");
+const API_GEMINI_HTTP: &str = include_str!("../templates/api/gemini/generate.http");
+
+fn write_api_scaffolds(dir: &Path, cfg: &Config) -> anyhow::Result<()> {
+    for style in &cfg.server.api_styles {
+        match style.as_str() {
+            "openai" => {
+                std::fs::create_dir_all(dir.join("api/openai"))?;
+                std::fs::create_dir_all(dir.join("api/realtime"))?;
+                std::fs::write(dir.join("api/openai/README.md"), API_OPENAI_README)?;
+                std::fs::write(dir.join("api/openai/chat.http"), API_OPENAI_HTTP)?;
+                std::fs::write(dir.join("api/realtime/README.md"), API_REALTIME_README)?;
+                std::fs::write(dir.join("api/realtime/chat-ws.js"), API_REALTIME_JS)?;
+            }
+            "claude" => {
+                std::fs::create_dir_all(dir.join("api/claude"))?;
+                std::fs::write(dir.join("api/claude/README.md"), API_CLAUDE_README)?;
+                std::fs::write(dir.join("api/claude/messages.http"), API_CLAUDE_HTTP)?;
+            }
+            "gemini" => {
+                std::fs::create_dir_all(dir.join("api/gemini"))?;
+                std::fs::write(dir.join("api/gemini/README.md"), API_GEMINI_README)?;
+                std::fs::write(dir.join("api/gemini/generate.http"), API_GEMINI_HTTP)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 /// Creates a new project folder. Refuses to write into a non-empty folder.
 pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Result<()> {
@@ -173,7 +217,7 @@ pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Resu
         .hint("choose another name or folder; existing files are never overwritten")
         .into());
     }
-    for sub in ["prompts", "data/docs", "outputs", "scripts", ".yourai"] {
+    for sub in ["prompts", "data/docs", "outputs", "scripts", "web/api", ".yourai"] {
         std::fs::create_dir_all(dir.join(sub))?;
     }
     std::fs::write(dir.join(CONFIG_FILE), config::render(cfg))?;
@@ -182,6 +226,11 @@ pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Resu
     std::fs::write(dir.join("README.md"), README.replace("{{name}}", &cfg.name))?;
     std::fs::write(dir.join(".gitignore"), GITIGNORE)?;
     std::fs::write(dir.join("data/docs/.gitkeep"), "")?;
+    std::fs::write(dir.join("web/index.html"), WEB_INDEX.replace("{{name}}", &cfg.name))?;
+    std::fs::write(dir.join("web/app.js"), WEB_APP_JS)?;
+    std::fs::write(dir.join("web/styles.css"), WEB_CSS)?;
+    std::fs::write(dir.join("web/api/README.md"), WEB_API_README)?;
+    write_api_scaffolds(dir, cfg)?;
     for (name, body) in [
         ("start.sh", START_SH),
         ("stop.sh", STOP_SH),
@@ -226,7 +275,7 @@ mod tests {
         scaffold(&dir, &cfg, None).unwrap();
         let p = Project { root: dir.clone() };
 
-        // Absolute paths under ~/.yourai (legacy) → not a runtime lock.
+        // Absolute paths under ~/.yourai (legacy) → not a runtime lock in module mode.
         let legacy = Lock {
             engine_exe: "/Users/me/.yourai/engines/llama/bin/llama-server".into(),
             model_path: "/Users/me/.yourai/models/m.gguf".into(),
@@ -247,5 +296,63 @@ mod tests {
 
         std::fs::create_dir_all(p.module_dir()).unwrap();
         assert!(p.lock().is_some());
+    }
+
+    #[test]
+    fn lock_accepts_shared_home_paths_when_project_modules_off() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        // Re-set before each check: other tests also touch YOURAI_HOME.
+        std::env::set_var("YOURAI_HOME", &home);
+        let dir = tmp.path().join("p");
+        let mut cfg = config::sample();
+        cfg.store.project_modules = false;
+        scaffold(&dir, &cfg, None).unwrap();
+        let p = Project { root: dir };
+
+        let shared = Lock {
+            engine_exe: home.join("engines/llama/bin/llama-server").to_string_lossy().into(),
+            model_path: home.join("models/m.gguf").to_string_lossy().into(),
+            ..Default::default()
+        };
+        lock::save(&p.lock_path(), &shared).unwrap();
+        std::env::set_var("YOURAI_HOME", &home);
+        assert!(p.lock().is_some());
+
+        // Module-relative lock is refused in shared mode.
+        let module = Lock {
+            engine_exe: "yourai_modules/engines/llama/bin/llama-server".into(),
+            model_path: "yourai_modules/models/m.gguf".into(),
+            ..Default::default()
+        };
+        lock::save(&p.lock_path(), &module).unwrap();
+        std::env::set_var("YOURAI_HOME", &home);
+        assert!(p.lock().is_none());
+        std::env::remove_var("YOURAI_HOME");
+    }
+
+    #[test]
+    fn scaffold_includes_web_ui() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        scaffold(&dir, &config::sample(), None).unwrap();
+        assert!(dir.join("web/index.html").is_file());
+        assert!(dir.join("web/app.js").is_file());
+        assert!(dir.join("web/api/README.md").is_file());
+        assert!(dir.join("api/openai/chat.http").is_file());
+        assert!(dir.join("api/realtime/README.md").is_file());
+    }
+
+    #[test]
+    fn scaffold_api_styles_select_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        let mut cfg = config::sample();
+        cfg.server.api_styles = vec!["claude".into(), "gemini".into()];
+        scaffold(&dir, &cfg, None).unwrap();
+        assert!(dir.join("api/claude/messages.http").is_file());
+        assert!(dir.join("api/gemini/generate.http").is_file());
+        assert!(!dir.join("api/openai").exists());
+        assert!(!dir.join("api/realtime").exists());
     }
 }

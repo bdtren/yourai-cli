@@ -2,7 +2,7 @@
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI on a
 phone, a VPS, or over an IP. The person and project are made up; the commands and
-output come from a real run of yourai v0.0.6 (some numbers are rounded).
+output come from a real run of yourai v0.0.7 (some numbers are rounded).
 
 **Who:** Duy, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
@@ -15,7 +15,7 @@ works offline, and never sends his notes to anyone.
 
 ```console
 $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
-yourai: installing yourai v0.0.6 for aarch64-apple-darwin
+yourai: installing yourai v0.0.7 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
 yourai: added /Users/duy/.yourai/bin to PATH in /Users/duy/.zshrc
@@ -189,6 +189,7 @@ study-buddy/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # written by `yourai build` (commit this)
 ├── yourai_modules/       # models and engines (gitignored; delete anytime)
+├── web/                 # editable browser chat page
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio he creates (step 10)
@@ -520,7 +521,7 @@ Updates for this project
 
 $ yourai self-update --check
 Checking for a new version…
-✔ yourai v0.0.6 is the latest version
+✔ yourai v0.0.7 is the latest version
 ```
 
 ## 15. Done for the semester: `yourai stop` and `yourai uninstall`

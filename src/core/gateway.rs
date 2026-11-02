@@ -73,15 +73,17 @@ pub struct EngineRecord {
     pub port: u16,
 }
 
-struct Gw {
-    root: PathBuf,
-    state_dir: PathBuf,
-    outputs: PathBuf,
-    cfg: Config,
-    lock: Lock,
-    api_key: Option<String>,
-    key_file: Option<PathBuf>,
-    http: reqwest::Client,
+pub(crate) struct Gw {
+    pub(crate) root: PathBuf,
+    pub(crate) state_dir: PathBuf,
+    pub(crate) outputs: PathBuf,
+    /// When set, GET `/` and static assets are served from this project folder.
+    pub(crate) ui_dir: Option<PathBuf>,
+    pub(crate) cfg: Config,
+    pub(crate) lock: Lock,
+    pub(crate) api_key: Option<String>,
+    pub(crate) key_file: Option<PathBuf>,
+    pub(crate) http: reqwest::Client,
     procs: Mutex<BTreeMap<Slot, Proc>>,
     /// sd-server handles one job at a time, and image and video share it.
     sd: tokio::sync::Mutex<()>,
@@ -89,13 +91,13 @@ struct Gw {
     tts: tokio::sync::Mutex<()>,
 }
 
-type Shared = Arc<Gw>;
+pub(crate) type Shared = Arc<Gw>;
 
 /// An error response in the OpenAI shape: `{"error": {"message", "type"}}`.
-pub struct ApiError(StatusCode, String);
+pub struct ApiError(pub(crate) StatusCode, pub(crate) String);
 
 impl ApiError {
-    fn new(code: StatusCode, msg: impl Into<String>) -> Self {
+    pub(crate) fn new(code: StatusCode, msg: impl Into<String>) -> Self {
         ApiError(code, msg.into())
     }
 }
@@ -131,16 +133,24 @@ pub fn needs_key(method: &Method, path: &str) -> bool {
     path.starts_with("/v1/") || path.starts_with("/files/") || path.starts_with("/yourai/") || method != Method::GET
 }
 
+fn const_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 fn key_matches(headers: &HeaderMap, key: &str) -> bool {
-    let Some(given) = headers
+    if let Some(given) = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-    else {
-        return false;
-    };
-    let (a, b) = (given.trim().as_bytes(), key.as_bytes());
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    {
+        if const_eq(given.trim().as_bytes(), key.as_bytes()) {
+            return true;
+        }
+    }
+    if let Some(given) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+        return const_eq(given.trim().as_bytes(), key.as_bytes());
+    }
+    false
 }
 
 async fn auth(State(gw): State<Shared>, req: Request, next: axum::middleware::Next) -> Response {
@@ -148,7 +158,7 @@ async fn auth(State(gw): State<Shared>, req: Request, next: axum::middleware::Ne
         if needs_key(req.method(), req.uri().path()) && !key_matches(req.headers(), key) {
             return ApiError::new(
                 StatusCode::UNAUTHORIZED,
-                "missing or wrong API key: send `Authorization: Bearer <key>`",
+                "missing or wrong API key: send `Authorization: Bearer <key>` or `x-api-key`",
             )
             .into_response();
         }
@@ -223,6 +233,7 @@ impl Gw {
                             port,
                         },
                         self.key_file.as_deref(),
+                        self.ui_dir.is_some(),
                     ),
                 )
             }
@@ -276,7 +287,7 @@ impl Gw {
         );
     }
 
-    fn running_port(&self, slot: Slot) -> Option<u16> {
+    pub(crate) fn running_port(&self, slot: Slot) -> Option<u16> {
         let mut procs = self.procs.lock().unwrap();
         let alive = procs.get(&slot).is_some_and(|p| process::is_ours(p.pid, p.started));
         if !alive {
@@ -877,6 +888,83 @@ const HOP_BY_HOP: [&str; 6] = [
     "proxy-connection",
 ];
 
+fn static_mime(path: &Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "map" => "application/json",
+        "md" | "txt" | "http" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Serve a file from the project UI directory. Path traversal is rejected.
+async fn serve_project_ui(dir: &Path, req_path: &str) -> Response {
+    let rel = if req_path == "/" || req_path.is_empty() {
+        "index.html".to_string()
+    } else {
+        req_path.trim_start_matches('/').to_string()
+    };
+    let Ok(file) = paths::inside(dir, &rel) else {
+        return ApiError::new(StatusCode::BAD_REQUEST, "invalid path").into_response();
+    };
+    let file = if file.is_dir() { file.join("index.html") } else { file };
+    match tokio::fs::read(&file).await {
+        Ok(bytes) => {
+            let mut resp = Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, static_mime(&file));
+            if let Ok(len) = HeaderValue::from_str(&bytes.len().to_string()) {
+                resp = resp.header(header::CONTENT_LENGTH, len);
+            }
+            resp.body(Body::from(bytes))
+                .unwrap_or_else(|e| internal(e).into_response())
+        }
+        Err(_) => ApiError::new(StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+fn should_proxy_to_llama(gw: &Gw, path: &str) -> bool {
+    if path == "/health" || path.starts_with("/props") || path.starts_with("/slots") || path.starts_with("/metrics") {
+        return true;
+    }
+    if !path.starts_with("/v1/") {
+        return false;
+    }
+    // Foreign style routes are handled explicitly; do not send them to llama.
+    if path == "/v1/messages" || path.contains(":generateContent") || path.contains(":streamGenerateContent") {
+        return false;
+    }
+    // Always proxy OpenAI Chat Completions HTTP (used by `yourai chat` and adapters' engine).
+    // WebSocket `/v1/chat/ws` is registered only when `openai` is in api_styles.
+    let _ = gw;
+    true
+}
+
+/// When a project UI exists, serve it for browser GETs; otherwise (and for API paths)
+/// forward to llama-server. Media `/v1/images|videos|audio…` stay on dedicated routes.
+async fn fallback(State(gw): State<Shared>, req: Request) -> Response {
+    let path = req.uri().path().to_string();
+    let method = req.method().clone();
+    if let Some(dir) = gw.ui_dir.as_ref() {
+        if !should_proxy_to_llama(&gw, &path) && (method == Method::GET || method == Method::HEAD) {
+            return serve_project_ui(dir, &path).await;
+        }
+    }
+    if path.starts_with("/v1/") && !should_proxy_to_llama(&gw, &path) {
+        return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
+    }
+    proxy(State(gw), req).await
+}
+
 /// Everything else (chat completions, the browser chat page, /health) goes to llama-server.
 /// Responses are streamed (`Body::from_stream`) so SSE / WebUI resume paths are not buffered.
 async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
@@ -922,14 +1010,23 @@ async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
 }
 
 fn router(gw: Shared) -> Router {
-    Router::new()
+    let mut r = Router::new()
         .route("/v1/images/generations", post(images))
         .route("/v1/videos/generations", post(videos))
         .route("/v1/audio/transcriptions", post(transcriptions))
         .route("/v1/audio/speech", post(speech))
         .route("/files/{*path}", get(files))
-        .route("/yourai/status", get(status))
-        .fallback(proxy)
+        .route("/yourai/status", get(status));
+    if gw.cfg.server.has_api_style("openai") {
+        r = r.route("/v1/chat/ws", axum::routing::get(super::api::chat_ws));
+    }
+    if gw.cfg.server.has_api_style("claude") {
+        r = r.route("/v1/messages", post(super::api::claude_messages));
+    }
+    if gw.cfg.server.has_api_style("gemini") {
+        r = r.route("/v1/models/{*path}", post(super::api::gemini_generate));
+    }
+    r.fallback(fallback)
         .layer(DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(axum::middleware::from_fn_with_state(gw.clone(), auth))
         .with_state(gw)
@@ -1039,10 +1136,15 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
         None
     };
     let key_file = p.state_dir().join("api-keys.txt");
+    let ui_dir = cfg.project_ui_dir(&p.root);
+    if let Some(dir) = &ui_dir {
+        log(format!("serving project UI from {}", dir.display()));
+    }
     let gw = Arc::new(Gw {
         root: p.root.clone(),
         state_dir: p.state_dir(),
         outputs: p.outputs_dir(),
+        ui_dir,
         key_file: (api_key.is_some() && key_file.is_file()).then_some(key_file),
         cfg,
         lock,
@@ -1127,6 +1229,7 @@ mod tests {
             root: tmp.path().into(),
             state_dir: tmp.path().join(".yourai"),
             outputs: tmp.path().join("outputs"),
+            ui_dir: None,
             cfg: super::super::config::sample(),
             lock: Lock::default(),
             api_key: Some("k".into()),

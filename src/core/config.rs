@@ -6,6 +6,9 @@ use crate::error::{CliError, Exit};
 
 pub const SCHEMA_VERSION: u32 = 2;
 
+/// Chat API dialects the gateway can speak under `/v1/`.
+pub const API_STYLES: [&str; 3] = ["openai", "claude", "gemini"];
+
 /// Tools the chat agent can use. Media tools also need their capability enabled.
 pub const AGENT_TOOLS: [&str; 7] = [
     "list_files",
@@ -28,6 +31,8 @@ pub struct Config {
     pub runtime: RuntimeCfg,
     pub generation: GenerationCfg,
     pub server: ServerCfg,
+    #[serde(default)]
+    pub store: StoreCfg,
     #[serde(default)]
     pub agent: AgentCfg,
     #[serde(default)]
@@ -239,6 +244,13 @@ pub struct ServerCfg {
     pub host: String,
     pub port: u16,
     pub web_ui: bool,
+    /// Project-relative folder with `index.html` for the browser chat. Empty or missing
+    /// falls back to llama.cpp's WebUI when `web_ui` is true.
+    #[serde(default = "default_ui_dir")]
+    pub ui_dir: String,
+    /// Chat API dialects to expose under `/v1/` (`openai`, `claude`, `gemini`).
+    #[serde(default = "default_api_styles")]
+    pub api_styles: Vec<String>,
     pub require_api_key: bool,
     /// Stop image, video, and speech engines after this many idle minutes, 0 = never.
     #[serde(default = "default_idle")]
@@ -247,6 +259,29 @@ pub struct ServerCfg {
 
 fn default_idle() -> u32 {
     10
+}
+
+fn default_ui_dir() -> String {
+    "web".into()
+}
+
+fn default_api_styles() -> Vec<String> {
+    vec!["openai".into()]
+}
+
+/// Where models and engines are installed for this project.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct StoreCfg {
+    /// `true` (default): install and run from `./yourai_modules/`.
+    /// `false`: install and run from `~/.yourai` only (no project module folder).
+    pub project_modules: bool,
+}
+
+impl Default for StoreCfg {
+    fn default() -> Self {
+        StoreCfg { project_modules: true }
+    }
 }
 
 impl ServerCfg {
@@ -262,6 +297,10 @@ impl ServerCfg {
             &self.host
         };
         format!("http://{host}:{}", self.port)
+    }
+
+    pub fn has_api_style(&self, style: &str) -> bool {
+        self.api_styles.iter().any(|s| s == style)
     }
 }
 
@@ -467,7 +506,33 @@ impl Config {
             super::paths::inside(Path::new("."), &self.text_to_speech.speaker_file)
                 .map_err(|e| invalid(format!("text_to_speech.speaker_file: {e}")))?;
         }
+        if !self.server.ui_dir.is_empty() {
+            super::paths::inside(Path::new("."), &self.server.ui_dir)
+                .map_err(|e| invalid(format!("server.ui_dir: {e}")))?;
+        }
+        if self.server.api_styles.is_empty() {
+            return Err(invalid(
+                "server.api_styles must list at least one of openai, claude, gemini",
+            ));
+        }
+        for s in &self.server.api_styles {
+            if !API_STYLES.contains(&s.as_str()) {
+                return Err(invalid(format!(
+                    "server.api_styles: unknown style \"{s}\" (choose from {})",
+                    API_STYLES.join(", ")
+                )));
+            }
+        }
         Ok(())
+    }
+
+    /// Project browser UI folder when `web_ui` is on and `<ui_dir>/index.html` exists.
+    pub fn project_ui_dir(&self, root: &Path) -> Option<std::path::PathBuf> {
+        if !self.server.web_ui || self.server.ui_dir.is_empty() {
+            return None;
+        }
+        let dir = super::paths::inside(root, &self.server.ui_dir).ok()?;
+        dir.join("index.html").is_file().then_some(dir)
     }
 }
 
@@ -520,9 +585,17 @@ host = "{host}"
 port = {port}
 # Browser chat page at http://{host_url}:{port}
 web_ui = {web_ui}
+# Project folder with index.html for the browser chat (edit freely). Empty = llama.cpp WebUI.
+ui_dir = {ui_dir}
+# Chat dialects under /v1/: openai (SSE+WS), claude (SSE), gemini (SSE). Leave room for your own /v2/.
+api_styles = [{api_styles}]
 require_api_key = {req_key}
 # Stop image, video, and speech engines after this many idle minutes, 0 = never
 idle_unload_minutes = {idle}
+
+[store]
+# true = download/run from ./yourai_modules/ (default). false = use ~/.yourai only.
+project_modules = {project_modules}
 {caps}"#,
         schema = cfg.schema_version,
         name = cfg.name,
@@ -546,8 +619,17 @@ idle_unload_minutes = {idle}
         },
         port = cfg.server.port,
         web_ui = cfg.server.web_ui,
+        ui_dir = q(&cfg.server.ui_dir),
+        api_styles = cfg
+            .server
+            .api_styles
+            .iter()
+            .map(|s| q(s))
+            .collect::<Vec<_>>()
+            .join(", "),
         req_key = cfg.server.require_api_key,
         idle = cfg.server.idle_unload_minutes,
+        project_modules = cfg.store.project_modules,
         caps = render_capabilities(cfg),
     )
 }
@@ -655,6 +737,7 @@ pub fn change_impact(key: &str) -> &'static str {
         "model" | "runtime" | "image" | "video" | "speech_to_text" | "text_to_speech" => {
             "Engine or model change: run `yourai rebuild` (may download files)."
         }
+        "store" => "Store location change: run `yourai rebuild` (may download or copy files).",
         "agent" => "Used the next time you run `yourai chat`.",
         "generation" | "server" | "system_prompt" | "name" | "goal" => {
             "Restart needed: run `yourai rebuild` (fast, nothing is downloaded)."
@@ -692,9 +775,12 @@ pub fn sample() -> Config {
             host: "127.0.0.1".into(),
             port: 8080,
             web_ui: true,
+            ui_dir: "web".into(),
+            api_styles: default_api_styles(),
             require_api_key: false,
             idle_unload_minutes: 10,
         },
+        store: StoreCfg::default(),
         agent: AgentCfg::default(),
         image: ImageCfg::default(),
         video: VideoCfg::default(),

@@ -24,6 +24,7 @@ fn flag<'a>(args: &'a InitArgs, key: &str) -> Option<&'a str> {
         "runtime" => args.runtime.as_deref(),
         "ctx" => args.ctx.as_deref(),
         "interface" => args.interface.as_deref(),
+        "api_styles" => args.api_styles.as_deref(),
         "access" => args.access.as_deref(),
         "port" => args.port.as_deref(),
         "capabilities" => args.capabilities.as_deref(),
@@ -71,7 +72,11 @@ impl Wizard<'_> {
         let Some(q) = q else { return Ok(false) };
 
         // `--yes` alone keeps the download to the chat model; media models are tens of GB.
-        let yes_default = (key == "capabilities" && self.yes).then_some("agent");
+        let yes_default = match key {
+            "capabilities" if self.yes => Some("agent"),
+            "api_styles" if self.yes => Some("openai"),
+            _ => None,
+        };
         let value = match flag(self.args, key).or(yes_default).filter(|_| !force_prompt) {
             Some(v) if key == "port" && q.find(v).is_none() => parse_port(v, &self.answers)?,
             Some(v) => prompt::check_flag(&q, v)?,
@@ -358,9 +363,12 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             host: if lan { "0.0.0.0".into() } else { "127.0.0.1".into() },
             port: a.port.parse().unwrap_or(8080),
             web_ui: a.interface == "webui",
+            ui_dir: "web".into(),
+            api_styles: a.api_style_list(),
             require_api_key: lan,
             idle_unload_minutes: 10,
         },
+        store: Default::default(),
         agent: AgentCfg {
             enabled: a.has_cap("agent"),
             ..Default::default()
@@ -476,6 +484,7 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
             "stt_model" => "Speech-to-text model",
             "tts_model" => "Voice model",
             "interface" => "Interface",
+            "api_styles" => "API styles",
             "access" => "Network access",
             "port" => "Port",
             _ => key,

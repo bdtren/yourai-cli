@@ -167,10 +167,15 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
     }
     // Shared cache dirs (licenses, catalog) still live under YOURAI_HOME.
     paths::ensure_home()?;
-    store::rename_singular_module_dir(&p.root)?;
-    let store = Store::new(&p.root, opts);
+    let project_modules = cfg.store.project_modules;
+    if project_modules {
+        store::rename_singular_module_dir(&p.root)?;
+    }
+    let store = Store::new(&p.root, opts, project_modules);
     store.ensure_dirs()?;
-    let _ = migrate_legacy_lock(p, &store)?;
+    if project_modules {
+        let _ = migrate_legacy_lock(p, &store)?;
+    }
 
     let hw = hardware::detect();
     let catalog = Catalog::load();
@@ -189,8 +194,13 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
 
     let total: f64 = chat.download_gb() + caps.iter().map(|(_, r)| r.download_gb()).sum::<f64>();
     if !caps.is_empty() {
+        let where_ = if project_modules {
+            "yourai_modules/ or the shared cache"
+        } else {
+            "~/.yourai"
+        };
         ui::info(format!(
-            "this project uses {} of models in total (files already in yourai_modules/ or the shared cache are reused)",
+            "this project uses {} of models in total (files already in {where_} are reused)",
             ui::gb(total)
         ));
     }
