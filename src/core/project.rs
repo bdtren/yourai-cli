@@ -170,7 +170,6 @@ const STOP_PS1: &str = include_str!("../templates/stop.ps1");
 const WEB_INDEX: &str = include_str!("../templates/web/index.html");
 const WEB_APP_JS: &str = include_str!("../templates/web/app.js");
 const WEB_CSS: &str = include_str!("../templates/web/styles.css");
-const WEB_API_README: &str = include_str!("../templates/web/api/README.md");
 const API_OPENAI_README: &str = include_str!("../templates/api/openai/README.md");
 const API_OPENAI_HTTP: &str = include_str!("../templates/api/openai/chat.http");
 const API_REALTIME_README: &str = include_str!("../templates/api/realtime/README.md");
@@ -179,8 +178,15 @@ const API_CLAUDE_README: &str = include_str!("../templates/api/claude/README.md"
 const API_CLAUDE_HTTP: &str = include_str!("../templates/api/claude/messages.http");
 const API_GEMINI_README: &str = include_str!("../templates/api/gemini/README.md");
 const API_GEMINI_HTTP: &str = include_str!("../templates/api/gemini/generate.http");
+const API_HANDLER_ECHO: &str = include_str!("../templates/api/handlers/example_echo.js");
 
 fn write_api_scaffolds(dir: &Path, cfg: &Config) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dir.join("api/handlers"))?;
+    std::fs::write(
+        dir.join("api/routes.toml"),
+        super::api::routes::scaffold_toml(&cfg.server.api_styles),
+    )?;
+    std::fs::write(dir.join("api/handlers/example_echo.js"), API_HANDLER_ECHO)?;
     for style in &cfg.server.api_styles {
         match style.as_str() {
             "openai" => {
@@ -217,7 +223,7 @@ pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Resu
         .hint("choose another name or folder; existing files are never overwritten")
         .into());
     }
-    for sub in ["prompts", "data/docs", "outputs", "scripts", "web/api", ".yourai"] {
+    for sub in ["prompts", "data/docs", "outputs", "scripts", ".yourai"] {
         std::fs::create_dir_all(dir.join(sub))?;
     }
     std::fs::write(dir.join(CONFIG_FILE), config::render(cfg))?;
@@ -226,10 +232,14 @@ pub fn scaffold(dir: &Path, cfg: &Config, api_key: Option<&str>) -> anyhow::Resu
     std::fs::write(dir.join("README.md"), README.replace("{{name}}", &cfg.name))?;
     std::fs::write(dir.join(".gitignore"), GITIGNORE)?;
     std::fs::write(dir.join("data/docs/.gitkeep"), "")?;
-    std::fs::write(dir.join("web/index.html"), WEB_INDEX.replace("{{name}}", &cfg.name))?;
-    std::fs::write(dir.join("web/app.js"), WEB_APP_JS)?;
-    std::fs::write(dir.join("web/styles.css"), WEB_CSS)?;
-    std::fs::write(dir.join("web/api/README.md"), WEB_API_README)?;
+    // Keep web/ even when customize_web_ui is false so flipping the flag needs no re-scaffold.
+    // Skip only when browser chat is off entirely (API-only projects).
+    if cfg.server.web_ui {
+        std::fs::create_dir_all(dir.join("web"))?;
+        std::fs::write(dir.join("web/index.html"), WEB_INDEX.replace("{{name}}", &cfg.name))?;
+        std::fs::write(dir.join("web/app.js"), WEB_APP_JS)?;
+        std::fs::write(dir.join("web/styles.css"), WEB_CSS)?;
+    }
     write_api_scaffolds(dir, cfg)?;
     for (name, body) in [
         ("start.sh", START_SH),
@@ -338,9 +348,22 @@ mod tests {
         scaffold(&dir, &config::sample(), None).unwrap();
         assert!(dir.join("web/index.html").is_file());
         assert!(dir.join("web/app.js").is_file());
-        assert!(dir.join("web/api/README.md").is_file());
+        assert!(!dir.join("web/api").exists());
+        assert!(dir.join("api/routes.toml").is_file());
+        assert!(dir.join("api/handlers/example_echo.js").is_file());
         assert!(dir.join("api/openai/chat.http").is_file());
         assert!(dir.join("api/realtime/README.md").is_file());
+    }
+
+    #[test]
+    fn scaffold_skips_web_when_web_ui_off() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("p");
+        let mut cfg = config::sample();
+        cfg.server.web_ui = false;
+        scaffold(&dir, &cfg, None).unwrap();
+        assert!(!dir.join("web").exists());
+        assert!(dir.join("api/routes.toml").is_file());
     }
 
     #[test]
@@ -354,5 +377,10 @@ mod tests {
         assert!(dir.join("api/gemini/generate.http").is_file());
         assert!(!dir.join("api/openai").exists());
         assert!(!dir.join("api/realtime").exists());
+        let routes = std::fs::read_to_string(dir.join("api/routes.toml")).unwrap();
+        assert!(routes.contains("upstream = \"claude_messages\""));
+        assert!(routes.contains("upstream = \"gemini_generate\""));
+        assert!(!routes.contains("upstream = \"openai_chat_ws\""));
+        assert!(!routes.contains("path = \"/v1/chat/ws\""));
     }
 }

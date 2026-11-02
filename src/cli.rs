@@ -261,6 +261,9 @@ pub struct InitArgs {
     /// Interface: webui | api
     #[arg(long)]
     pub interface: Option<String>,
+    /// Use editable project web/ UI: true | false (default true when interface is webui)
+    #[arg(long)]
+    pub customize_web_ui: Option<String>,
     /// API styles, comma separated: openai, claude, gemini
     #[arg(long)]
     pub api_styles: Option<String>,

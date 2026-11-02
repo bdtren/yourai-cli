@@ -20,6 +20,7 @@ pub const ORDER: &[&str] = &[
     "stt_model",
     "tts_model",
     "interface",
+    "customize_web_ui",
     "api_styles",
     "access",
     "port",
@@ -57,6 +58,7 @@ pub fn build(key: &str, c: &Ctx) -> anyhow::Result<Option<Question>> {
         "stt_model" => cap_model(c, Capability::SpeechToText),
         "tts_model" => cap_model(c, Capability::TextToSpeech),
         "interface" => Some(interface(c)),
+        "customize_web_ui" => customize_web_ui(c),
         "api_styles" => Some(api_styles()),
         "access" => Some(access()),
         "port" => Some(port(c)),
@@ -523,6 +525,33 @@ fn interface(c: &Ctx) -> Question {
         },
         options,
     }
+}
+
+fn customize_web_ui(c: &Ctx) -> Option<Question> {
+    if c.answers.interface != "webui" {
+        return None;
+    }
+    let options = vec![
+        Opt::new(
+            "true",
+            "Yes — editable project page (`web/`)",
+            "Serve the project web/ folder. Edit HTML/JS/CSS freely, then yourai rebuild.",
+        ),
+        Opt::new(
+            "false",
+            "No — default llama.cpp chat page",
+            "Use the built-in llama WebUI. web/ is still created so you can flip customize_web_ui later.",
+        ),
+    ];
+    Some(Question {
+        multi: None,
+        key: "customize_web_ui",
+        title: "Use the editable project browser UI (`web/`)?".into(),
+        why: "Keeps web/ on disk either way. Set server.customize_web_ui = false to force the default UI without deleting files.".into(),
+        recommended: 0,
+        reason: "Recommended: customize greeting, layout, and branding in web/.".into(),
+        options,
+    })
 }
 
 fn api_styles() -> Question {

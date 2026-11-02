@@ -2,6 +2,9 @@
 
 Base URL: `http://127.0.0.1:<port>/v1`
 
+Live mount: [`../routes.toml`](../routes.toml) (`upstream = "gemini_generate"`).
+`.http` files here are samples only.
+
 - `POST /v1/models/{model}:generateContent`
 - `POST /v1/models/{model}:streamGenerateContent` (SSE)
 

@@ -88,6 +88,8 @@ pub struct Answers {
     pub stt_model: String,
     pub tts_model: String,
     pub interface: String,
+    /// "true" | "false" — use project `web/` vs default llama UI.
+    pub customize_web_ui: String,
     /// Comma list of API styles: openai, claude, gemini.
     pub api_styles: String,
     pub access: String,
@@ -109,6 +111,7 @@ impl Answers {
             "stt_model" => &self.stt_model,
             "tts_model" => &self.tts_model,
             "interface" => &self.interface,
+            "customize_web_ui" => &self.customize_web_ui,
             "api_styles" => &self.api_styles,
             "access" => &self.access,
             "port" => &self.port,
@@ -130,6 +133,7 @@ impl Answers {
             "stt_model" => self.stt_model = v,
             "tts_model" => self.tts_model = v,
             "interface" => self.interface = v,
+            "customize_web_ui" => self.customize_web_ui = v,
             "api_styles" => self.api_styles = v,
             "access" => self.access = v,
             "port" => self.port = v,

@@ -119,7 +119,12 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
     };
     let creatable = matches!(
         key,
-        "model.repo" | "model.file" | "store.project_modules" | "server.ui_dir" | "server.api_styles"
+        "model.repo"
+            | "model.file"
+            | "store.project_modules"
+            | "server.ui_dir"
+            | "server.api_styles"
+            | "server.customize_web_ui"
     );
     if let Some(t) = table {
         if doc.get(t).is_none() && t == "store" && creatable {
@@ -156,7 +161,7 @@ pub fn set_value(p: &Project, key: &str, raw: &str) -> anyhow::Result<()> {
             Value::Array(arr)
         }
         Some(_) => return Err(type_err(key, "a simple value")),
-        None if key == "store.project_modules" => raw
+        None if key == "store.project_modules" || key == "server.customize_web_ui" => raw
             .parse::<bool>()
             .map(Value::from)
             .map_err(|_| type_err(key, "true or false"))?,

@@ -2,6 +2,7 @@
 
 Endpoint: `ws://127.0.0.1:<port>/v1/chat/ws`
 
+Live mount: [`../routes.toml`](../routes.toml) (`upstream = "openai_chat_ws"`).
 (Only when `server.api_styles` includes `openai`.)
 
 ## Protocol

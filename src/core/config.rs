@@ -244,6 +244,10 @@ pub struct ServerCfg {
     pub host: String,
     pub port: u16,
     pub web_ui: bool,
+    /// When true (default), serve the project `ui_dir` if it has `index.html`.
+    /// When false, keep using the default llama.cpp WebUI even if `web/` exists.
+    #[serde(default = "default_customize_web_ui")]
+    pub customize_web_ui: bool,
     /// Project-relative folder with `index.html` for the browser chat. Empty or missing
     /// falls back to llama.cpp's WebUI when `web_ui` is true.
     #[serde(default = "default_ui_dir")]
@@ -259,6 +263,10 @@ pub struct ServerCfg {
 
 fn default_idle() -> u32 {
     10
+}
+
+fn default_customize_web_ui() -> bool {
+    true
 }
 
 fn default_ui_dir() -> String {
@@ -526,9 +534,10 @@ impl Config {
         Ok(())
     }
 
-    /// Project browser UI folder when `web_ui` is on and `<ui_dir>/index.html` exists.
+    /// Project browser UI folder when `web_ui` and `customize_web_ui` are on and
+    /// `<ui_dir>/index.html` exists. Otherwise the gateway uses llama.cpp's WebUI.
     pub fn project_ui_dir(&self, root: &Path) -> Option<std::path::PathBuf> {
-        if !self.server.web_ui || self.server.ui_dir.is_empty() {
+        if !self.server.web_ui || !self.server.customize_web_ui || self.server.ui_dir.is_empty() {
             return None;
         }
         let dir = super::paths::inside(root, &self.server.ui_dir).ok()?;
@@ -585,6 +594,8 @@ host = "{host}"
 port = {port}
 # Browser chat page at http://{host_url}:{port}
 web_ui = {web_ui}
+# true = serve project ui_dir (edit web/). false = llama.cpp default UI (web/ may still exist).
+customize_web_ui = {customize_web_ui}
 # Project folder with index.html for the browser chat (edit freely). Empty = llama.cpp WebUI.
 ui_dir = {ui_dir}
 # Chat dialects under /v1/: openai (SSE+WS), claude (SSE), gemini (SSE). Leave room for your own /v2/.
@@ -619,6 +630,7 @@ project_modules = {project_modules}
         },
         port = cfg.server.port,
         web_ui = cfg.server.web_ui,
+        customize_web_ui = cfg.server.customize_web_ui,
         ui_dir = q(&cfg.server.ui_dir),
         api_styles = cfg
             .server
@@ -775,6 +787,7 @@ pub fn sample() -> Config {
             host: "127.0.0.1".into(),
             port: 8080,
             web_ui: true,
+            customize_web_ui: true,
             ui_dir: "web".into(),
             api_styles: default_api_styles(),
             require_api_key: false,
@@ -933,5 +946,30 @@ mod tests {
         cfg.server.require_api_key = true;
         let text = render(&cfg);
         assert!(!text.lines().any(|l| l.trim_start().starts_with("api_key")));
+    }
+
+    #[test]
+    fn customize_web_ui_gates_project_ui_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("web")).unwrap();
+        std::fs::write(root.join("web/index.html"), "<html></html>").unwrap();
+
+        let mut cfg = sample();
+        assert_eq!(cfg.project_ui_dir(root).as_deref(), Some(root.join("web").as_path()));
+
+        cfg.server.customize_web_ui = false;
+        assert!(cfg.project_ui_dir(root).is_none());
+
+        cfg.server.customize_web_ui = true;
+        cfg.server.web_ui = false;
+        assert!(cfg.project_ui_dir(root).is_none());
+    }
+
+    #[test]
+    fn customize_web_ui_defaults_true_when_missing() {
+        let text = render(&sample()).replace("customize_web_ui = true\n", "");
+        let cfg = Config::parse(&text).unwrap();
+        assert!(cfg.server.customize_web_ui);
     }
 }

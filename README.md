@@ -76,8 +76,10 @@ If the port is busy, an interactive start asks whether to use the next free port
 `server.port` into `yourai.toml`.
 
 New projects get an editable `web/` chat page. When `server.web_ui = true` and
-`web/index.html` exists, the gateway serves that folder (llama.cpp’s WebUI is disabled).
-Without a project UI, the llama WebUI is still proxied. Local models cannot fetch live weather
+`server.customize_web_ui = true` and `web/index.html` exists, the gateway serves that folder
+(llama.cpp’s WebUI is disabled). Set `customize_web_ui = false` to force the default llama UI
+without deleting `web/`. API mounts come from `api/routes.toml` (plus optional handlers);
+`.http` files under `api/<style>/` are samples only. Local models cannot fetch live weather
 or other web data without a tool.
 
 Non-interactive setup (for scripts and CI):
@@ -155,8 +157,10 @@ my-ai/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # which models/engines this project uses (commit this)
 ├── yourai_modules/       # downloaded models and engines (git-ignored, like node_modules)
-├── web/                 # editable browser chat
-├── api/                 # HTTP/SSE (+ OpenAI WS) examples for chosen api_styles
+├── web/                 # editable browser chat (when customize_web_ui = true)
+├── api/routes.toml      # live HTTP/WS mounts (edit → yourai rebuild)
+├── api/handlers/        # optional custom route scripts
+├── api/<style>/         # .http / sample clients for chosen api_styles
 ├── prompts/system.md    # the system prompt
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio you create
@@ -181,7 +185,9 @@ project module folder and install/run from `~/.yourai` only.
 | `claude` | HTTP SSE | `/v1/messages` |
 | `gemini` | HTTP SSE | `/v1/models/{model}:generateContent`, `:streamGenerateContent` |
 
-Examples are scaffolded into `api/openai/`, `api/realtime/` (WS), `api/claude/`, and `api/gemini/` as selected.
+`api/routes.toml` is the live route table (loaded on `yourai start` / `rebuild`). Style samples
+are scaffolded into `api/openai/`, `api/realtime/` (WS), `api/claude/`, and `api/gemini/` as selected.
+Add custom endpoints with `handler = "api/handlers/…"` (JSON stdin/stdout; executable script or `node` for `.js`).
 
 The same port also serves OpenAI-style media endpoints for enabled capabilities:
 
@@ -258,7 +264,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.7`).
+Checklist of product features. Checked items ship in this version (`0.0.8`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
@@ -270,9 +276,11 @@ Checklist of product features. Checked items ship in this version (`0.0.7`).
 - [x] `pause` / `resume` (unload model to free memory)
 - [x] Terminal `chat` (`/reset`, `/exit`, `/help`)
 - [x] Browser chat page (project `web/` UI, with llama.cpp WebUI fallback)
+- [x] `server.customize_web_ui` — keep `web/` but force default llama UI when false
 - [x] `[store] project_modules` — project-local modules (default) or shared `~/.yourai` only
 - [x] OpenAI-compatible API on `localhost` (`/v1`) plus optional Claude/Gemini adapters
 - [x] OpenAI chat WebSocket (`/v1/chat/ws`) and `api/realtime/` scaffold
+- [x] `api/routes.toml` + `api/handlers/` for remappable mounts and custom endpoints
 - [x] `config show|get|set|edit|validate` (preserves TOML comments)
 - [x] Smart `rebuild` (only redo what changed)
 - [x] `update` catalog / `--engine` / `--model`

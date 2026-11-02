@@ -16,8 +16,10 @@ yourai logs -f   # follow the server log
 ```
 
 When it is running, open the URL printed by `yourai start` in a browser for the chat page
-(if `server.web_ui = true`). Edit `web/` to customize that page. Or point any OpenAI-compatible
-app at `http://127.0.0.1:<port>/v1`.
+(if `server.web_ui = true`). With `server.customize_web_ui = true`, edit `web/` to customize
+that page; set it to `false` to use the default llama.cpp UI without deleting `web/`.
+API mounts live in `api/routes.toml` (plus optional `api/handlers/`). Or point any
+OpenAI-compatible app at `http://127.0.0.1:<port>/v1`.
 
 If you turned on capabilities in `yourai.toml`:
 
@@ -39,8 +41,10 @@ after asking, if `allow_write = true`) and use the capabilities above. Type `/he
 | `prompts/system.md` | you | The instructions the AI follows in `yourai chat`. |
 | `data/docs/` | you | Reserved for document search in a future version. |
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
-| `web/` | you | Browser chat page. Edit freely. |
-| `api/` | you | HTTP/SSE (and OpenAI WebSocket) examples for the API styles you chose. |
+| `web/` | you | Browser chat page when `customize_web_ui = true`. Edit freely. |
+| `api/routes.toml` | you | Live HTTP/WS mounts (edit, then `yourai rebuild`). |
+| `api/handlers/` | you | Optional custom route scripts (JSON stdin/stdout). |
+| `api/<style>/` | you | `.http` / sample clients for the API styles you chose. |
 | `outputs/` | yourai | Images, videos, and audio you create. Gitignored. |
 | `yourai.lock` | yourai | Which models and engines this project uses. Safe to commit. |
 | `yourai_modules/` | yourai | Downloaded models and engines for this project (when `store.project_modules = true`). Gitignored; delete anytime and run `yourai build` again. |

@@ -3,7 +3,9 @@
 mod chat_upstream;
 mod claude;
 mod gemini;
+pub mod handler;
 mod openai_ws;
+pub mod routes;
 
 pub use claude::messages as claude_messages;
 pub use gemini::generate as gemini_generate;

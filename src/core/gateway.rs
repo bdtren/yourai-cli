@@ -79,6 +79,8 @@ pub(crate) struct Gw {
     pub(crate) outputs: PathBuf,
     /// When set, GET `/` and static assets are served from this project folder.
     pub(crate) ui_dir: Option<PathBuf>,
+    /// When set, public chat mounts come from `api/routes.toml` instead of api_styles defaults.
+    pub(crate) route_table: Option<super::api::routes::RoutesFile>,
     pub(crate) cfg: Config,
     pub(crate) lock: Lock,
     pub(crate) api_key: Option<String>,
@@ -943,10 +945,47 @@ fn should_proxy_to_llama(gw: &Gw, path: &str) -> bool {
     if path == "/v1/messages" || path.contains(":generateContent") || path.contains(":streamGenerateContent") {
         return false;
     }
-    // Always proxy OpenAI Chat Completions HTTP (used by `yourai chat` and adapters' engine).
-    // WebSocket `/v1/chat/ws` is registered only when `openai` is in api_styles.
-    let _ = gw;
+    if path == "/v1/chat/ws" {
+        return false;
+    }
+    // When api/routes.toml owns mounts, chat completions are only served if registered there.
+    if gw.route_table.is_some() && path.starts_with("/v1/chat/completions") {
+        return false;
+    }
+    // Otherwise always proxy OpenAI Chat Completions HTTP (used by `yourai chat` and adapters).
     true
+}
+
+/// Proxy to llama-server at a fixed upstream path (for remapped `openai_chat` routes).
+async fn proxy_upstream_path(State(gw): State<Shared>, req: Request, upstream_path: &str) -> Response {
+    let Some(port) = gw.running_port(Slot::Chat) else {
+        return ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "the chat model is still loading").into_response();
+    };
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+    let target = format!("http://127.0.0.1:{port}{upstream_path}{query}");
+    let mut rb = gw.http.request(req.method().clone(), target);
+    for (k, v) in req.headers() {
+        if k != header::HOST && k != header::CONTENT_LENGTH && !HOP_BY_HOP.contains(&k.as_str()) {
+            rb = rb.header(k, v);
+        }
+    }
+    let body = reqwest::Body::wrap_stream(req.into_body().into_data_stream());
+    let r = match rb.body(body).send().await {
+        Ok(r) => r,
+        Err(e) => return upstream(e).into_response(),
+    };
+    let mut resp = Response::builder().status(r.status());
+    for (k, v) in r.headers() {
+        if !HOP_BY_HOP.contains(&k.as_str()) {
+            resp = resp.header(k, v);
+        }
+    }
+    resp.body(Body::from_stream(r.bytes_stream()))
+        .unwrap_or_else(|e| internal(e).into_response())
+}
+
+async fn openai_chat_upstream(State(gw): State<Shared>, req: Request) -> Response {
+    proxy_upstream_path(State(gw), req, "/v1/chat/completions").await
 }
 
 /// When a project UI exists, serve it for browser GETs; otherwise (and for API paths)
@@ -1017,19 +1056,74 @@ fn router(gw: Shared) -> Router {
         .route("/v1/audio/speech", post(speech))
         .route("/files/{*path}", get(files))
         .route("/yourai/status", get(status));
-    if gw.cfg.server.has_api_style("openai") {
-        r = r.route("/v1/chat/ws", axum::routing::get(super::api::chat_ws));
-    }
-    if gw.cfg.server.has_api_style("claude") {
-        r = r.route("/v1/messages", post(super::api::claude_messages));
-    }
-    if gw.cfg.server.has_api_style("gemini") {
-        r = r.route("/v1/models/{*path}", post(super::api::gemini_generate));
+
+    if let Some(table) = gw.route_table.clone() {
+        for (i, entry) in table.route.iter().enumerate() {
+            let method = entry.method_norm();
+            let path = entry.path.clone();
+            if let Some(upstream) = entry.upstream.as_deref() {
+                r = match (method.as_str(), upstream) {
+                    ("POST", "openai_chat") => r.route(&path, post(openai_chat_upstream)),
+                    ("GET", "openai_chat_ws") => r.route(&path, get(super::api::chat_ws)),
+                    ("POST", "claude_messages") => r.route(&path, post(super::api::claude_messages)),
+                    ("POST", "gemini_generate") => r.route(&path, post(super::api::gemini_generate)),
+                    _ => {
+                        log(format!(
+                            "warning: skipping route {method} {path} (unsupported method/upstream)"
+                        ));
+                        r
+                    }
+                };
+            } else if entry.handler.is_some() {
+                // Capture route index; Shared state is injected by axum.
+                let idx = i;
+                let handler = move |State(gw): State<Shared>, req: Request| {
+                    let idx = idx;
+                    async move { custom_handler_at(State(gw), idx, req).await }
+                };
+                r = match method.as_str() {
+                    "GET" => r.route(&path, get(handler)),
+                    "POST" => r.route(&path, post(handler)),
+                    "PUT" => r.route(&path, axum::routing::put(handler)),
+                    "PATCH" => r.route(&path, axum::routing::patch(handler)),
+                    "DELETE" => r.route(&path, axum::routing::delete(handler)),
+                    other => {
+                        log(format!(
+                            "warning: skipping handler route {other} {path} (unsupported method)"
+                        ));
+                        r
+                    }
+                };
+            }
+        }
+    } else {
+        if gw.cfg.server.has_api_style("openai") {
+            r = r.route("/v1/chat/ws", get(super::api::chat_ws));
+        }
+        if gw.cfg.server.has_api_style("claude") {
+            r = r.route("/v1/messages", post(super::api::claude_messages));
+        }
+        if gw.cfg.server.has_api_style("gemini") {
+            r = r.route("/v1/models/{*path}", post(super::api::gemini_generate));
+        }
     }
     r.fallback(fallback)
         .layer(DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(axum::middleware::from_fn_with_state(gw.clone(), auth))
         .with_state(gw)
+}
+
+async fn custom_handler_at(State(gw): State<Shared>, idx: usize, req: Request) -> Response {
+    let Some(table) = gw.route_table.as_ref() else {
+        return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let Some(entry) = table.route.get(idx) else {
+        return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let Some(handler) = entry.handler.as_ref() else {
+        return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    super::api::handler::invoke(&gw.root, handler, entry.default_timeout_ms(), req).await
 }
 
 async fn stop_all(gw: &Gw) {
@@ -1140,11 +1234,16 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
     if let Some(dir) = &ui_dir {
         log(format!("serving project UI from {}", dir.display()));
     }
+    let route_table = super::api::routes::load(&p.root)?;
+    if let Some(t) = &route_table {
+        log(format!("loaded {} route(s) from api/routes.toml", t.route.len()));
+    }
     let gw = Arc::new(Gw {
         root: p.root.clone(),
         state_dir: p.state_dir(),
         outputs: p.outputs_dir(),
         ui_dir,
+        route_table,
         key_file: (api_key.is_some() && key_file.is_file()).then_some(key_file),
         cfg,
         lock,
@@ -1230,6 +1329,7 @@ mod tests {
             state_dir: tmp.path().join(".yourai"),
             outputs: tmp.path().join("outputs"),
             ui_dir: None,
+            route_table: None,
             cfg: super::super::config::sample(),
             lock: Lock::default(),
             api_key: Some("k".into()),

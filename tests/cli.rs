@@ -79,15 +79,32 @@ fn init_yes_creates_valid_project_and_config_edits_work() {
         ".gitignore",
         "scripts/start.sh",
         "scripts/stop.ps1",
+        "web/index.html",
+        "api/routes.toml",
+        "api/handlers/example_echo.js",
     ] {
         assert!(proj.join(f).is_file(), "missing {f}");
     }
+    assert!(!proj.join("web/api").exists());
     yourai(&home, &proj).args(["config", "validate"]).assert().success();
     yourai(&home, &proj)
         .args(["config", "get", "model.id"])
         .assert()
         .success()
         .stdout("qwen2.5-0.5b\n");
+    yourai(&home, &proj)
+        .args(["config", "get", "server.customize_web_ui"])
+        .assert()
+        .success()
+        .stdout("true\n");
+    yourai(&home, &proj)
+        .args(["config", "set", "server.customize_web_ui", "false"])
+        .assert()
+        .success();
+    yourai(&home, &proj)
+        .args(["config", "get", "server.customize_web_ui"])
+        .assert()
+        .stdout("false\n");
     yourai(&home, &proj)
         .args(["config", "set", "runtime.context_length", "8192"])
         .assert()

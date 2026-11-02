@@ -24,6 +24,7 @@ fn flag<'a>(args: &'a InitArgs, key: &str) -> Option<&'a str> {
         "runtime" => args.runtime.as_deref(),
         "ctx" => args.ctx.as_deref(),
         "interface" => args.interface.as_deref(),
+        "customize_web_ui" => args.customize_web_ui.as_deref(),
         "api_styles" => args.api_styles.as_deref(),
         "access" => args.access.as_deref(),
         "port" => args.port.as_deref(),
@@ -75,6 +76,11 @@ impl Wizard<'_> {
         let yes_default = match key {
             "capabilities" if self.yes => Some("agent"),
             "api_styles" if self.yes => Some("openai"),
+            "customize_web_ui" if self.yes => Some(if self.answers.interface == "webui" {
+                "true"
+            } else {
+                "false"
+            }),
             _ => None,
         };
         let value = match flag(self.args, key).or(yes_default).filter(|_| !force_prompt) {
@@ -363,6 +369,7 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             host: if lan { "0.0.0.0".into() } else { "127.0.0.1".into() },
             port: a.port.parse().unwrap_or(8080),
             web_ui: a.interface == "webui",
+            customize_web_ui: a.interface == "webui" && a.customize_web_ui != "false",
             ui_dir: "web".into(),
             api_styles: a.api_style_list(),
             require_api_key: lan,
@@ -484,6 +491,7 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
             "stt_model" => "Speech-to-text model",
             "tts_model" => "Voice model",
             "interface" => "Interface",
+            "customize_web_ui" => "Editable web UI",
             "api_styles" => "API styles",
             "access" => "Network access",
             "port" => "Port",
