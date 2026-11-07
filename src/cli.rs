@@ -282,7 +282,7 @@ pub struct InitArgs {
     /// Image model id, for example sd-turbo
     #[arg(long)]
     pub image_model: Option<String>,
-    /// Video model id, for example wan2.1-t2v-1.3b
+    /// Video model id, for example wan2.1-t2v-1.3b or minimax-h3-fl2va
     #[arg(long)]
     pub video_model: Option<String>,
     /// Speech-to-text model id, for example whisper-base

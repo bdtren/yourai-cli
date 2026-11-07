@@ -320,6 +320,15 @@ mod tests {
         assert!(vl.download_gb("Q4_K_M").unwrap() > q.size_gb + 0.5);
         let wan = c.model("wan2.1-t2v-1.3b").unwrap();
         assert!(wan.memory_gb(wan.default_quant(), 0).unwrap() > 8.0);
+        let h3 = c.model("minimax-h3-fl2va").unwrap();
+        assert_eq!(h3.kind, Kind::Video);
+        assert!(h3.components.iter().any(|c| c.role == "llm"));
+        assert!(h3.components.iter().any(|c| c.role == "audio-vae"));
+        assert_eq!(
+            h3.defaults.get("frame_align").and_then(|v| v.as_str()),
+            Some("minimax_h3")
+        );
+        assert!(h3.memory_gb(h3.default_quant(), 0).unwrap() > 30.0);
         assert!(wan.file_url(&wan.components[0]).contains("Comfy-Org"));
     }
 

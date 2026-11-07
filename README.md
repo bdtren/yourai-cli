@@ -14,7 +14,8 @@ Optional capabilities, picked in the wizard:
   write them. It can also call the capabilities below.
 - **Vision**: models such as Qwen2.5-VL, Gemma 3, and Qwen2.5-Omni see images (and Omni hears audio).
 - **Images** with [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
-  (SD-Turbo, FLUX.1 schnell), and **short videos** with Wan2.1.
+  (SD-Turbo, FLUX.1 schnell), and **short videos** with Wan2.1 or MiniMax-H3 FL2VA
+  (video + stereo audio on high-memory GPUs).
 - **Speech to text** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp), and
   **text to speech** with Qwen3-TTS.
 
@@ -264,7 +265,7 @@ cargo clippy --all-targets -- -D warnings
 
 ## TODO
 
-Checklist of product features. Checked items ship in this version (`0.0.8`).
+Checklist of product features. Checked items ship in this version (`0.0.9`).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`

@@ -397,12 +397,14 @@ pub fn llama_args(
 }
 
 /// stable-diffusion.cpp server for one image or video model. `files` maps each role
-/// (`model` or `diffusion_model`, `vae`, `t5xxl`, `clip_l`, ...) to its path.
+/// (`model` or `diffusion_model`, `vae`, `t5xxl`, `clip_l`, `llm`, `audio-vae`, ...) to its path.
+/// `extra` is optional catalog `defaults.server_args` (only for models that set them).
 pub fn sd_args(
     files: &std::collections::BTreeMap<String, String>,
     main_role: &str,
     port: u16,
     threads: u32,
+    extra: &[String],
 ) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "--listen-ip".into(),
@@ -427,7 +429,22 @@ pub fn sd_args(
     if threads > 0 {
         a.extend(["-t".into(), threads.to_string()]);
     }
+    a.extend(extra.iter().cloned());
     a
+}
+
+/// Catalog `defaults.server_args` as a string list (ignored when missing or not an array).
+pub fn sd_server_args(defaults: &serde_json::Value) -> Vec<String> {
+    defaults
+        .get("server_args")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn whisper_args(model: &Path, port: u16, threads: u32, language: &str) -> Vec<String> {
@@ -552,7 +569,7 @@ mod tests {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let s = sd_args(&files, "diffusion_model", 39101, 0).join(" ");
+        let s = sd_args(&files, "diffusion_model", 39101, 0, &[]).join(" ");
         assert!(s.starts_with("--listen-ip 127.0.0.1 --listen-port 39101 --diffusion-model /w.gguf"));
         assert!(s.contains("--vae /vae.safetensors"));
         assert!(s.contains("--t5xxl /t5.gguf"));
@@ -560,9 +577,27 @@ mod tests {
         let one: std::collections::BTreeMap<String, String> =
             [("model".to_string(), "/sd.gguf".to_string())].into_iter().collect();
         assert_eq!(
-            sd_args(&one, "model", 1, 4).join(" "),
+            sd_args(&one, "model", 1, 4, &[]).join(" "),
             "--listen-ip 127.0.0.1 --listen-port 1 -m /sd.gguf -t 4"
         );
+        let h3: std::collections::BTreeMap<String, String> = [
+            ("diffusion_model", "/h3.gguf"),
+            ("llm", "/te.gguf"),
+            ("vae", "/v.safetensors"),
+            ("audio-vae", "/a.safetensors"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let extra = vec!["--offload-to-cpu".into()];
+        let s = sd_args(&h3, "diffusion_model", 9, 0, &extra).join(" ");
+        assert!(s.contains("--diffusion-model /h3.gguf"));
+        assert!(s.contains("--llm /te.gguf"));
+        assert!(s.contains("--audio-vae /a.safetensors"));
+        assert!(s.ends_with("--offload-to-cpu"));
+        assert!(sd_server_args(&serde_json::json!({"server_args": ["--offload-to-cpu"]}))
+            == vec!["--offload-to-cpu".to_string()]);
+        assert!(sd_server_args(&serde_json::json!({})).is_empty());
     }
 
     #[test]

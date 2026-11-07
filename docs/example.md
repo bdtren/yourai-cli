@@ -2,7 +2,7 @@
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI on a
 phone, a VPS, or over an IP. The person and project are made up; the commands and
-output come from a real run of yourai v0.0.8 (some numbers are rounded).
+output come from a real run of yourai v0.0.9 (some numbers are rounded).
 
 **Who:** Duy, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
@@ -15,7 +15,7 @@ works offline, and never sends his notes to anyone.
 
 ```console
 $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
-yourai: installing yourai v0.0.8 for aarch64-apple-darwin
+yourai: installing yourai v0.0.9 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
 yourai: added /Users/duy/.yourai/bin to PATH in /Users/duy/.zshrc
@@ -67,6 +67,11 @@ Network was not tested. Run `yourai doctor --network` to check downloads.
 
 Next: yourai init
 ```
+
+On a machine with a much larger memory budget (about 40 GB+ usable), doctor can also list
+**MiniMax-H3 FL2VA (video + stereo audio)** — a heavier video model that writes sound into the
+clip. Duy’s 20.8 GB budget keeps **Wan2.1** as the practical video pick; MiniMax stays available
+to choose in `init` or later with `yourai config set video.model minimax-h3-fl2va`.
 
 His Mac can run a 14B model, and also create images, videos, and speech. He decides to
 start tiny to try things out, and add more later (steps 9 and 10).
@@ -138,9 +143,90 @@ Recommended for 20.8 GB of GPU memory: everything that runs comfortably on it.
 ```
 
 He unticks vision, images, speech, and video with Space (he wants a tiny first download),
-leaves **Read files (agent)** on, and presses Enter. Later questions then pick the chat model,
-quantization, context length, interface, network access, and port. Each capability he left on
-would have gotten its own model question.
+leaves **Read files (agent)** on, and presses Enter. Next come the chat model, quantization,
+context length, then how he will talk to the AI.
+
+If he had left **Create short videos** on, the next video-model question would list catalog
+entries that fit (on his Mac, **Wan2.1 T2V 1.3B** with Recommended). On a high-memory GPU
+workstation the list can also include **MiniMax-H3 FL2VA** (~40 GB while working, ~28 GB
+download, 24 fps clips with stereo audio). Non-interactive equivalent:
+
+```sh
+yourai init --yes --name studio --capabilities video --video-model minimax-h3-fl2va
+cd studio && yourai build --accept-license && yourai start
+yourai video "a red fox trotting through falling snow, soft wind ambience"
+```
+
+### Interface (pick one)
+
+```console
+How will you use it?
+Both options only listen on this computer unless you change network access next.
+
+┌─────────────────────────────┬────────────────────────────────────────────────────────────────────────┐
+│ Option                      ┆ What it means                                                          │
+╞═════════════════════════════╪════════════════════════════════════════════════════════════════════════╡
+│ API + browser chat page     ┆ A local OpenAI-compatible API plus a chat page in your browser.        │
+│   (Recommended)             ┆ Friendliest option. `yourai chat` works too.                           │
+│ API only                    ┆ Only the API for your apps and tools, plus `yourai chat`. No web page. │
+└─────────────────────────────┴────────────────────────────────────────────────────────────────────────┘
+
+Recommended for most people: chat in the browser, no setup.
+? Choose one:
+> API + browser chat page (Recommended)
+  API only
+```
+
+He keeps **API + browser chat page**.
+
+### Editable web UI (only when browser chat is on)
+
+```console
+Use the editable project browser UI (`web/`)?
+Keeps web/ on disk either way. Set server.customize_web_ui = false to force the default UI
+without deleting files.
+
+┌──────────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+│ Option                                   ┆ What it means                                            │
+╞══════════════════════════════════════════╪══════════════════════════════════════════════════════════╡
+│ Yes — editable project page (`web/`)     ┆ Serve the project web/ folder. Edit HTML/JS/CSS freely,  │
+│   (Recommended)                          ┆ then yourai rebuild.                                     │
+│ No — default llama.cpp chat page         ┆ Use the built-in llama WebUI. web/ is still created so   │
+│                                          ┆ you can flip customize_web_ui later.                     │
+└──────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+
+Recommended: customize greeting, layout, and branding in web/.
+? Choose one:
+> Yes — editable project page (`web/`) (Recommended)
+  No — default llama.cpp chat page
+```
+
+He keeps **Yes** so he can edit `web/index.html`, `web/app.js`, and `web/styles.css` later.
+
+### API styles (pick any)
+
+```console
+Which API styles should this project speak?
+All styles use the /v1/ prefix so you can add your own /v2/ later. Pick any combination.
+
+┌────────────────────────────────────┬────────────────────────────────────────────────────────────────┐
+│ Option                             ┆ What it means                                                  │
+╞════════════════════════════════════╪════════════════════════════════════════════════════════════════╡
+│ GPT (OpenAI) — SSE + WebSocket     ┆ /v1/chat/completions (SSE) and /v1/chat/ws. Scaffold           │
+│   (Recommended)                    ┆ api/openai/ and api/realtime/.                                 │
+│ Claude (Anthropic) — SSE           ┆ /v1/messages with SSE. Scaffold api/claude/.                   │
+│ Gemini — SSE                       ┆ /v1/models/… generateContent with SSE. Scaffold api/gemini/.   │
+└────────────────────────────────────┴────────────────────────────────────────────────────────────────┘
+
+Recommended: OpenAI is the most widely supported client format.
+? Choose any (space to toggle, enter to confirm):
+> [x] GPT (OpenAI) — SSE + WebSocket (Recommended)
+  [ ] Claude (Anthropic) — SSE
+  [ ] Gemini — SSE
+```
+
+He leaves only **GPT (OpenAI)** on. Live mounts go in `api/routes.toml` (edit → `yourai rebuild`);
+`.http` files under `api/<style>/` are samples. Then network access and port.
 
 ### Same project in one line
 
@@ -150,28 +236,30 @@ To skip the questions and start tiny, he runs:
 $ yourai init --yes --name study-buddy --model qwen2.5-0.5b
 
 Review
-┌────────────────┬───────────────────────────────────────┐
-│ Setting        ┆ Your choice                           │
-╞════════════════╪═══════════════════════════════════════╡
-│ Project folder ┆ study-buddy                           │
-│ Goal           ┆ Chat assistant                        │
-│ Capabilities   ┆ Read files (agent)                    │
-│ Model          ┆ Qwen2.5 0.5B Instruct (Small, 0.4 GB) │
-│ Quantization   ┆ Q5_K_M                                │
-│ Runtime        ┆ llama.cpp                             │
-│ Context length ┆ 4096 tokens                           │
-│ Interface      ┆ API + browser chat page               │
-│ Network access ┆ Only this computer (127.0.0.1)        │
-│ Port           ┆ 8080                                  │
-└────────────────┴───────────────────────────────────────┘
-┌──────────────────────┬────────────────────────────────────────────────────┐
-│ Estimate             ┆ Amount                                             │
-╞══════════════════════╪════════════════════════════════════════════════════╡
-│ Download             ┆ 420 MB model + 16 MB engine                        │
-│ Memory while running ┆ about 869 MB (budget 20.8 GB)                      │
-│ Disk use             ┆ about 461 MB in yourai_modules/ (project-local)     │
-└──────────────────────┴────────────────────────────────────────────────────┘
-Nothing is downloaded yet. `yourai build` downloads after you confirm the model license.
+┌─────────────────┬───────────────────────────────────────┐
+│ Setting         ┆ Your choice                           │
+╞═════════════════╪═══════════════════════════════════════╡
+│ Project folder  ┆ study-buddy                           │
+│ Goal            ┆ Chat assistant                        │
+│ Capabilities    ┆ Read files (agent)                    │
+│ Model           ┆ Qwen2.5 0.5B Instruct (Small, 0.4 GB) │
+│ Quantization    ┆ Q5_K_M                                │
+│ Runtime         ┆ llama.cpp                             │
+│ Context length  ┆ 4096 tokens                           │
+│ Interface       ┆ API + browser chat page               │
+│ Editable web UI ┆ Yes — editable project page (`web/`)  │
+│ API styles      ┆ GPT (OpenAI) — SSE + WebSocket        │
+│ Network access  ┆ Only this computer (127.0.0.1)        │
+│ Port            ┆ 8080                                  │
+└─────────────────┴───────────────────────────────────────┘
+┌──────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Estimate             ┆ Amount                                                                                             │
+╞══════════════════════╪════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ Download             ┆ 420 MB model + 16 MB engine                                                                        │
+│ Memory while running ┆ about 869 MB for chat (budget 20.8 GB)                                                             │
+│ Disk use             ┆ about 461 MB in yourai_modules/ (project-local; use `yourai build -s` to also keep a shared cache) │
+└──────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Nothing is downloaded yet. `yourai build` downloads into yourai_modules/ after you confirm the model license.
 ✔ Created study-buddy
 
 Next: cd study-buddy && yourai build && yourai start
@@ -180,7 +268,8 @@ Next: cd study-buddy && yourai build && yourai start
 With `--yes` and no `--capabilities`, only the agent is turned on: `yourai chat` can read
 files in the project, and nothing extra is downloaded. Pass
 `--capabilities agent,image,stt` (and the matching `--image-model` / `--stt-model` flags) when
-you want media in a non-interactive run.
+you want media in a non-interactive run. Use `--customize-web-ui false` or
+`--api-styles openai,claude` to override those answers.
 
 The new folder:
 
@@ -189,7 +278,11 @@ study-buddy/
 ├── yourai.toml          # all settings, with comments
 ├── yourai.lock          # written by `yourai build` (commit this)
 ├── yourai_modules/       # models and engines (gitignored; delete anytime)
-├── web/                 # editable browser chat page
+├── web/                 # editable browser chat (when customize_web_ui = true)
+├── api/routes.toml      # live HTTP/WS mounts (edit → yourai rebuild)
+├── api/handlers/        # optional custom route scripts
+├── api/openai/          # .http samples for chosen api_styles
+├── api/realtime/        # OpenAI chat WebSocket sample
 ├── prompts/system.md    # the instructions the AI follows
 ├── data/docs/           # reserved for document search (later release)
 ├── outputs/             # images, videos, and audio he creates (step 10)
@@ -521,7 +614,7 @@ Updates for this project
 
 $ yourai self-update --check
 Checking for a new version…
-✔ yourai v0.0.8 is the latest version
+✔ yourai v0.0.9 is the latest version
 ```
 
 ## 15. Done for the semester: `yourai stop` and `yourai uninstall`

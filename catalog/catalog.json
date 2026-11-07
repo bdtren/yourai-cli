@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated": "2026-11-01",
+  "updated": "2026-11-07",
   "engines": {
     "llama-server": {
       "version": "b12015",
@@ -971,13 +971,83 @@
       "work_gb": 4.0,
       "defaults": {
         "main": "diffusion_model",
+        "frame_align": "wan",
         "width": 480,
         "height": 272,
         "steps": 20,
         "cfg_scale": 6.0,
         "flow_shift": 3.0,
         "frames": 33,
-        "fps": 16
+        "fps": 16,
+        "sample_method": "euler",
+        "distilled_guidance": 3.5
+      }
+    },
+    {
+      "id": "minimax-h3-fl2va",
+      "name": "MiniMax-H3 FL2VA (video + stereo audio)",
+      "kind": "video",
+      "params_b": 33.0,
+      "repo": "leejet/MiniMax-H3-GGUF",
+      "revision": "d9c4c6312b4728a68a15a35626d84775a6523783",
+      "license": "MiniMax Model License",
+      "license_url": "https://huggingface.co/MiniMaxAI/MiniMax-H3",
+      "tags": [
+        "video",
+        "audio"
+      ],
+      "context_max": 0,
+      "kv_gb_per_1k_ctx": 0.0,
+      "quants": {
+        "Q4_K_M": {
+          "file": "minimax_h3_fl2va_pruned-Q4_K_M.gguf",
+          "sha256": "dd948e08ad0ba3c71bd42f368e283dd82e790f5122a63b276e22a3e0283d0c10",
+          "size_gb": 10.637
+        }
+      },
+      "components": [
+        {
+          "role": "llm",
+          "file": "qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
+          "sha256": "a8ccadccd57ef34c838ffb8a7da8368bb554721b2760274a1d3b0df63960b997",
+          "size_gb": 12.201,
+          "repo": "leejet/MiniMax-H3-GGUF",
+          "revision": "d9c4c6312b4728a68a15a35626d84775a6523783"
+        },
+        {
+          "role": "vae",
+          "file": "vae/minimax_h3_video_vae_fp16.safetensors",
+          "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522",
+          "size_gb": 4.849,
+          "repo": "Comfy-Org/MiniMax-H3",
+          "revision": "54472221d27c695fca9621b0c3ed52f06c4af707"
+        },
+        {
+          "role": "audio-vae",
+          "file": "vae/minimax_h3_audio_vae_fp32.safetensors",
+          "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48",
+          "size_gb": 0.564,
+          "repo": "Comfy-Org/MiniMax-H3",
+          "revision": "54472221d27c695fca9621b0c3ed52f06c4af707"
+        }
+      ],
+      "work_gb": 12.0,
+      "defaults": {
+        "main": "diffusion_model",
+        "frame_align": "minimax_h3",
+        "width": 864,
+        "height": 480,
+        "steps": 8,
+        "cfg_scale": 1.0,
+        "flow_shift": 12.0,
+        "frames": 56,
+        "fps": 24,
+        "sample_method": "euler",
+        "distilled_guidance": 3.5,
+        "size_multiple": 32,
+        "server_args": [
+          "--offload-to-cpu"
+        ]
       }
     },
     {

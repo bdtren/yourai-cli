@@ -242,9 +242,10 @@ impl Gw {
             Slot::Image | Slot::Video => {
                 let m = self.model(slot)?;
                 let files = self.resolved_files(m)?;
+                let extra = engine::sd_server_args(&m.defaults);
                 (
                     self.engine_exe(super::catalog::SD)?,
-                    engine::sd_args(&files, &m.main, port, threads),
+                    engine::sd_args(&files, &m.main, port, threads, &extra),
                 )
             }
             Slot::SpeechToText => {
@@ -592,10 +593,109 @@ struct VideoReq {
     response_format: Option<String>,
 }
 
-/// Video models want 4n+1 frames.
+/// Wan-style video models want 4n+1 frames.
 pub fn align_frames(n: u64) -> u64 {
     let n = n.clamp(5, 241);
     (n - 1) / 4 * 4 + 1
+}
+
+/// MiniMax-H3 wants frames on the 17k+5 grid (minimum 5).
+pub fn align_frames_minimax_h3(n: u64) -> u64 {
+    let n = n.clamp(5, 241);
+    if n <= 5 {
+        return 5;
+    }
+    let k = (n - 5).div_ceil(17);
+    17 * k + 5
+}
+
+fn align_video_frames(n: u64, defaults: &Value) -> u64 {
+    match defaults.get("frame_align").and_then(Value::as_str).unwrap_or("wan") {
+        "minimax_h3" => align_frames_minimax_h3(n),
+        _ => align_frames(n),
+    }
+}
+
+fn align_dim(n: u64, multiple: u64) -> u64 {
+    if multiple <= 1 {
+        return n;
+    }
+    let n = n.max(multiple);
+    ((n + multiple - 1) / multiple) * multiple
+}
+
+/// Build the `/sdcpp/v1/vid_gen` JSON body from request + config + catalog defaults.
+pub fn video_job_body(
+    prompt: &str,
+    negative_prompt: &str,
+    seed: i64,
+    req_size: Option<(u32, u32)>,
+    req_frames: Option<u64>,
+    req_fps: Option<u64>,
+    req_steps: Option<u64>,
+    cfg_width: u32,
+    cfg_height: u32,
+    cfg_frames: u32,
+    cfg_fps: u32,
+    cfg_steps: u32,
+    defaults: &Value,
+) -> Value {
+    let multiple = defaults
+        .get("size_multiple")
+        .and_then(Value::as_u64)
+        .unwrap_or(16)
+        .max(1);
+    let width = align_dim(
+        req_size
+            .map(|s| s.0 as u64)
+            .unwrap_or_else(|| pick(None, cfg_width, defaults, "width", 480)),
+        multiple,
+    );
+    let height = align_dim(
+        req_size
+            .map(|s| s.1 as u64)
+            .unwrap_or_else(|| pick(None, cfg_height, defaults, "height", 272)),
+        multiple,
+    );
+    let frames = align_video_frames(pick(req_frames, cfg_frames, defaults, "frames", 33), defaults);
+    let fps = pick(req_fps, cfg_fps, defaults, "fps", 16);
+    let steps = pick(req_steps, cfg_steps, defaults, "steps", 20);
+    let cfg_scale = defaults
+        .get("cfg_scale")
+        .and_then(Value::as_f64)
+        .unwrap_or(6.0);
+    let flow_shift = defaults
+        .get("flow_shift")
+        .and_then(Value::as_f64)
+        .unwrap_or(3.0);
+    let sample_method = defaults
+        .get("sample_method")
+        .and_then(Value::as_str)
+        .unwrap_or("euler");
+    let distilled = defaults
+        .get("distilled_guidance")
+        .and_then(Value::as_f64)
+        .unwrap_or(3.5);
+    json!({
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "video_frames": frames,
+        "fps": fps,
+        "sample_params": {
+            "sample_method": sample_method,
+            "sample_steps": steps,
+            "flow_shift": flow_shift,
+            "guidance": {
+                "txt_cfg": cfg_scale,
+                "img_cfg": cfg_scale,
+                "distilled_guidance": distilled
+            }
+        },
+        "output_format": "webm"
+    })
 }
 
 async fn videos(State(gw): State<Shared>, Json(req): Json<VideoReq>) -> Result<Json<Value>, ApiError> {
@@ -614,36 +714,26 @@ async fn videos(State(gw): State<Shared>, Json(req): Json<VideoReq>) -> Result<J
         })?),
         None => None,
     };
-    let width = size
-        .map(|s| s.0 as u64)
-        .unwrap_or_else(|| pick(None, c.width, d, "width", 480));
-    let height = size
-        .map(|s| s.1 as u64)
-        .unwrap_or_else(|| pick(None, c.height, d, "height", 272));
-    let frames = align_frames(pick(req.frames, c.frames, d, "frames", 33));
-    let fps = pick(req.fps, c.fps, d, "fps", 16);
-    let steps = pick(req.steps, c.steps, d, "steps", 20);
-    let cfg_scale = d.get("cfg_scale").and_then(Value::as_f64).unwrap_or(6.0);
-    let flow_shift = d.get("flow_shift").and_then(Value::as_f64).unwrap_or(3.0);
+    let body = video_job_body(
+        &req.prompt,
+        &req.negative_prompt,
+        req.seed.unwrap_or(-1),
+        size,
+        req.frames,
+        req.fps,
+        req.steps,
+        c.width,
+        c.height,
+        c.frames,
+        c.fps,
+        c.steps,
+        d,
+    );
+    let frames = body.get("video_frames").and_then(Value::as_u64).unwrap_or(33);
+    let fps = body.get("fps").and_then(Value::as_u64).unwrap_or(16);
 
     let _sd = gw.sd.lock().await;
     let port = gw.ensure(Slot::Video).await?;
-    let body = json!({
-        "prompt": req.prompt,
-        "negative_prompt": req.negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": req.seed.unwrap_or(-1),
-        "video_frames": frames,
-        "fps": fps,
-        "sample_params": {
-            "sample_method": "euler",
-            "sample_steps": steps,
-            "flow_shift": flow_shift,
-            "guidance": {"txt_cfg": cfg_scale, "img_cfg": cfg_scale, "distilled_guidance": 3.5}
-        },
-        "output_format": "webm"
-    });
     let result = gw.sd_job(Slot::Video, port, "/sdcpp/v1/vid_gen", body).await?;
     let b64 = result.get("b64_json").and_then(Value::as_str).unwrap_or("");
     let bytes = base64::engine::general_purpose::STANDARD
@@ -1311,6 +1401,10 @@ mod tests {
         assert_eq!(align_frames(33), 33);
         assert_eq!(align_frames(35), 33);
         assert_eq!(align_frames(1), 5);
+        assert_eq!(align_frames_minimax_h3(5), 5);
+        assert_eq!(align_frames_minimax_h3(56), 56);
+        assert_eq!(align_frames_minimax_h3(57), 73);
+        assert_eq!(align_frames_minimax_h3(1), 5);
         assert_eq!(
             slug("A cat, on a chair! Very cute and fluffy indeed"),
             "a-cat-on-a-chair-very"
@@ -1319,6 +1413,75 @@ mod tests {
         assert_eq!(pick(Some(4), 0, &json!({"steps": 1}), "steps", 20), 4);
         assert_eq!(pick(None, 0, &json!({"steps": 1}), "steps", 20), 1);
         assert_eq!(pick(None, 8, &json!({"steps": 1}), "steps", 20), 8);
+
+        let wan = video_job_body(
+            "waves",
+            "",
+            -1,
+            None,
+            None,
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &json!({
+                "frame_align": "wan",
+                "width": 480,
+                "height": 272,
+                "steps": 20,
+                "cfg_scale": 6.0,
+                "flow_shift": 3.0,
+                "frames": 33,
+                "fps": 16,
+                "sample_method": "euler",
+                "distilled_guidance": 3.5
+            }),
+        );
+        assert_eq!(wan["width"], 480);
+        assert_eq!(wan["height"], 272);
+        assert_eq!(wan["video_frames"], 33);
+        assert_eq!(wan["fps"], 16);
+        assert_eq!(wan["sample_params"]["flow_shift"], 3.0);
+        assert_eq!(wan["sample_params"]["guidance"]["txt_cfg"], 6.0);
+        assert_eq!(wan["sample_params"]["sample_method"], "euler");
+
+        let h3 = video_job_body(
+            "fox",
+            "",
+            7,
+            None,
+            Some(60),
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &json!({
+                "frame_align": "minimax_h3",
+                "width": 864,
+                "height": 480,
+                "steps": 8,
+                "cfg_scale": 1.0,
+                "flow_shift": 12.0,
+                "frames": 56,
+                "fps": 24,
+                "sample_method": "euler",
+                "distilled_guidance": 3.5,
+                "size_multiple": 32
+            }),
+        );
+        assert_eq!(h3["width"], 864);
+        assert_eq!(h3["height"], 480);
+        assert_eq!(h3["video_frames"], 73); // 60 → 17k+5
+        assert_eq!(h3["fps"], 24);
+        assert_eq!(h3["sample_params"]["flow_shift"], 12.0);
+        assert_eq!(h3["sample_params"]["guidance"]["txt_cfg"], 1.0);
+        assert_eq!(h3["seed"], 7);
     }
 
     #[tokio::test]
