@@ -1,21 +1,24 @@
 version: 2
-updates:
-  - package-ecosystem: cargo
-    directory: "/"
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - security
+# Dependabot disabled — rely on cargo audit / cargo deny in security.yml instead.
+# Re-enable an ecosystem below when you want automatic bump PRs again.
+updates: []
 
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - github-actions
+# - package-ecosystem: cargo
+#   directory: "/"
+#   schedule:
+#     interval: weekly
+#     day: monday
+#   open-pull-requests-limit: 10
+#   labels:
+#     - dependencies
+#     - security
+
+# - package-ecosystem: github-actions
+#   directory: "/"
+#   schedule:
+#     interval: weekly
+#     day: monday
+#   open-pull-requests-limit: 5
+#   labels:
+#     - dependencies
+#     - github-actions
