@@ -1,3 +1,5 @@
+<a href="https://buymeacoffee.com/bdtren" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
+
 # yourai
 
 Build and run your own private AI on your computer.
@@ -219,6 +221,17 @@ Vision models accept OpenAI `image_url` and `input_audio` content parts in chat 
 - Engines listen on `127.0.0.1` only; everything goes through the one public port, which
   checks the API key in LAN mode.
 
+More detail:
+
+| Doc | Topic |
+| --- | --- |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md) | Trust boundaries and components |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Threats and mitigations |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | What stays local vs network use |
+| [docs/PERMISSIONS.md](docs/PERMISSIONS.md) | Agent, filesystem, and network permissions |
+| [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | CI audits (`cargo audit` / `cargo deny`) |
+
 ## Exit codes
 
 | Code | Meaning |
@@ -337,6 +350,12 @@ Checklist of product features. Checked items ship in this version (`0.0.9`).
 - [ ] Plugins / hooks (RAG injection in the gateway)
 - [ ] Desktop wrapper app
 - [ ] Community-contributed model catalog
+
+## Contributing
+
+See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow. Please also read the [code of conduct](CODE_OF_CONDUCT.md).
+
+If yourai helps you, you can [buy me a coffee](https://buymeacoffee.com/bdtren).
 
 ## License
 
