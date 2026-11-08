@@ -175,9 +175,29 @@ fn response_from(resp: HandlerResponse) -> Response {
         .unwrap_or_else(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }
 
-/// Build a small executable echo fixture for tests (shebang script).
+/// Build a small Node echo fixture for tests (works on Windows without chmod).
 #[cfg(test)]
-pub fn write_echo_fixture(path: &Path) {
+pub fn write_echo_js_fixture(path: &Path) {
+    let body = r#"const fs = require("fs");
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("end", () => {
+  const req = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const raw = Buffer.from(req.body_b64 || "", "base64").toString("utf8");
+  const out = {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    body_b64: Buffer.from(JSON.stringify({ echo: raw, path: req.path })).toString("base64"),
+  };
+  process.stdout.write(JSON.stringify(out) + "\n");
+});
+"#;
+    std::fs::write(path, body).unwrap();
+}
+
+/// Build a chmod + shebang echo fixture (Unix only).
+#[cfg(all(test, unix))]
+pub fn write_echo_executable_fixture(path: &Path) {
     let body = r#"#!/usr/bin/env python3
 import json, sys, base64
 req = json.load(sys.stdin)
@@ -190,30 +210,25 @@ out = {
 print(json.dumps(out))
 "#;
     std::fs::write(path, body).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn executable_handler_roundtrip() {
-        let tmp = tempfile::tempdir().unwrap();
-        let script = tmp.path().join("echo.py");
-        write_echo_fixture(&script);
-        let req = HandlerRequest {
+    fn sample_req() -> HandlerRequest {
+        HandlerRequest {
             method: "POST".into(),
             path: "/v2/echo".into(),
             headers: HashMap::new(),
             query: String::new(),
             body_b64: base64::engine::general_purpose::STANDARD.encode(b"hi"),
-        };
-        let resp = run_script(&script, 10_000, &req).await.unwrap();
+        }
+    }
+
+    fn assert_echo(resp: HandlerResponse) {
         assert_eq!(resp.status, 200);
         let body = base64::engine::general_purpose::STANDARD
             .decode(resp.body_b64.as_bytes())
@@ -221,6 +236,25 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["echo"], "hi");
         assert_eq!(v["path"], "/v2/echo");
+    }
+
+    #[tokio::test]
+    async fn js_handler_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("echo.js");
+        write_echo_js_fixture(&script);
+        let resp = run_script(&script, 10_000, &sample_req()).await.unwrap();
+        assert_echo(resp);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn executable_handler_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("echo.py");
+        write_echo_executable_fixture(&script);
+        let resp = run_script(&script, 10_000, &sample_req()).await.unwrap();
+        assert_echo(resp);
     }
 
     #[test]
