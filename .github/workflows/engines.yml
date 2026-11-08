@@ -56,7 +56,7 @@ jobs:
           path: dist-engines
           merge-multiple: true
       - run: ls -la dist-engines && cat dist-engines/*.sha256
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: engines-${{ github.run_number }}
           name: Engine builds ${{ github.run_number }}
