@@ -621,10 +621,11 @@ fn align_dim(n: u64, multiple: u64) -> u64 {
         return n;
     }
     let n = n.max(multiple);
-    ((n + multiple - 1) / multiple) * multiple
+    n.div_ceil(multiple) * multiple
 }
 
 /// Build the `/sdcpp/v1/vid_gen` JSON body from request + config + catalog defaults.
+#[allow(clippy::too_many_arguments)] // request + config + catalog knobs stay explicit
 pub fn video_job_body(
     prompt: &str,
     negative_prompt: &str,
@@ -660,18 +661,9 @@ pub fn video_job_body(
     let frames = align_video_frames(pick(req_frames, cfg_frames, defaults, "frames", 33), defaults);
     let fps = pick(req_fps, cfg_fps, defaults, "fps", 16);
     let steps = pick(req_steps, cfg_steps, defaults, "steps", 20);
-    let cfg_scale = defaults
-        .get("cfg_scale")
-        .and_then(Value::as_f64)
-        .unwrap_or(6.0);
-    let flow_shift = defaults
-        .get("flow_shift")
-        .and_then(Value::as_f64)
-        .unwrap_or(3.0);
-    let sample_method = defaults
-        .get("sample_method")
-        .and_then(Value::as_str)
-        .unwrap_or("euler");
+    let cfg_scale = defaults.get("cfg_scale").and_then(Value::as_f64).unwrap_or(6.0);
+    let flow_shift = defaults.get("flow_shift").and_then(Value::as_f64).unwrap_or(3.0);
+    let sample_method = defaults.get("sample_method").and_then(Value::as_str).unwrap_or("euler");
     let distilled = defaults
         .get("distilled_guidance")
         .and_then(Value::as_f64)

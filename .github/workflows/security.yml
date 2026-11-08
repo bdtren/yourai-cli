@@ -40,7 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo-deny
+        uses: actions/cache@v4
         with:
-          command: check
-          arguments: --all-features
+          path: ~/.cargo/bin
+          key: cargo-deny-${{ runner.os }}-v1
+      - name: Install cargo-deny
+        # Prefer cargo install over cargo-deny-action: that action builds a Docker
+        # image and downloads a fixed release tarball that has been failing (gzip invalid magic).
+        run: command -v cargo-deny >/dev/null || cargo install cargo-deny --locked
+      - name: cargo deny
+        # all-features is set in deny.toml [graph]
+        run: cargo deny check

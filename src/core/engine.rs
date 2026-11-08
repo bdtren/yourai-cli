@@ -595,8 +595,10 @@ mod tests {
         assert!(s.contains("--llm /te.gguf"));
         assert!(s.contains("--audio-vae /a.safetensors"));
         assert!(s.ends_with("--offload-to-cpu"));
-        assert!(sd_server_args(&serde_json::json!({"server_args": ["--offload-to-cpu"]}))
-            == vec!["--offload-to-cpu".to_string()]);
+        assert!(
+            sd_server_args(&serde_json::json!({"server_args": ["--offload-to-cpu"]}))
+                == vec!["--offload-to-cpu".to_string()]
+        );
         assert!(sd_server_args(&serde_json::json!({})).is_empty());
     }
 
