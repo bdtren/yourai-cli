@@ -27,7 +27,7 @@ jobs:
           - { os: macos-15,         engine: whisper-server, key: macos-x86_64-cpu }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build
         shell: bash
         run: scripts/build_engine.sh ${{ matrix.engine }} ${{ matrix.key }} dist-engines
