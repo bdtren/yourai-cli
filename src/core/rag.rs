@@ -262,8 +262,9 @@ pub fn status(p: &Project) -> anyhow::Result<Status> {
         return Ok(s);
     }
     let conn = Connection::open(&db)?;
-    s.chunks = conn.query_row("SELECT COUNT(*) FROM documents", [], |r| r.get(0))?;
-    s.files = conn.query_row("SELECT COUNT(DISTINCT path) FROM documents", [], |r| r.get(0))?;
+    s.chunks = conn.query_row("SELECT COUNT(*) FROM documents", [], |r| r.get::<_, i64>(0).map(|n| n as usize))?;
+    s.files =
+        conn.query_row("SELECT COUNT(DISTINCT path) FROM documents", [], |r| r.get::<_, i64>(0).map(|n| n as usize))?;
     Ok(s)
 }
 
