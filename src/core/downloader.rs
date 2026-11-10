@@ -57,6 +57,8 @@ pub struct Request<'a> {
     pub sha256: Option<&'a str>,
     pub size_bytes: u64,
     pub label: &'a str,
+    /// Optional Bearer token (Hugging Face gated models). Env `HF_TOKEN` is used when this is None.
+    pub auth_token: Option<&'a str>,
 }
 
 /// Downloads with resume (`.part` file + Range requests) and SHA-256 verification.
@@ -111,11 +113,17 @@ pub fn download(req: &Request) -> anyhow::Result<String> {
                 std::thread::sleep(Duration::from_secs(2 * attempts));
             }
             Err(e) => {
+                let msg = e.to_string();
+                let hint = if msg.contains("401") || msg.contains("403") {
+                    "this may be a gated Hugging Face model: accept the license on the model page, set HF_TOKEN or .yourai/secrets.toml hf_token, then run `yourai build` again"
+                } else {
+                    "run the same command again; the download resumes where it stopped"
+                };
                 return Err(
                     CliError::new(Exit::Download, format!("download of {} failed: {e}", req.label))
-                        .hint("run the same command again; the download resumes where it stopped")
+                        .hint(hint)
                         .into(),
-                )
+                );
             }
         }
     }
@@ -158,8 +166,12 @@ fn fetch_into(client: &reqwest::blocking::Client, req: &Request, part: &Path) ->
         rb = rb.header(reqwest::header::RANGE, format!("bytes={have}-"));
     }
     if req.url.starts_with("https://huggingface.co/") {
-        if let Ok(tok) = std::env::var("HF_TOKEN") {
+        if let Some(tok) = req.auth_token.filter(|t| !t.is_empty()) {
             rb = rb.bearer_auth(tok);
+        } else if let Ok(tok) = std::env::var("HF_TOKEN") {
+            if !tok.trim().is_empty() {
+                rb = rb.bearer_auth(tok.trim());
+            }
         }
     }
     let mut resp = rb.send()?;
@@ -168,6 +180,12 @@ fn fetch_into(client: &reqwest::blocking::Client, req: &Request, part: &Path) ->
         return Ok(()); // already complete; verification decides
     }
     if !status.is_success() {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            anyhow::bail!(
+                "server answered {status} for {} (gated or private Hugging Face file? set HF_TOKEN / hf_token and accept the model license)",
+                req.url
+            );
+        }
         anyhow::bail!("server answered {status} for {}", req.url);
     }
     let resumed = status == reqwest::StatusCode::PARTIAL_CONTENT;
@@ -246,6 +264,7 @@ mod tests {
                 sha256: Some(&expected),
                 size_bytes: 200_000,
                 label: "test",
+                auth_token: None,
             })
         })
         .await
@@ -275,6 +294,7 @@ mod tests {
                 sha256: Some(&"0".repeat(64)),
                 size_bytes: 8,
                 label: "test",
+                auth_token: None,
             })
         })
         .await

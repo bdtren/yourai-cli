@@ -2,7 +2,7 @@
 
 A complete walkthrough of `yourai`, from a fresh install to sharing the AI on a
 phone, a VPS, or over an IP. The person and project are made up; the commands and
-output come from a real run of yourai v0.0.9 (some numbers are rounded).
+output come from a real run of yourai v0.1.0 (some numbers are rounded).
 
 **Who:** Duy, a university student.
 **Computer:** MacBook Pro, Apple M5 Pro, 32 GB memory.
@@ -15,7 +15,7 @@ works offline, and never sends his notes to anyone.
 
 ```console
 $ curl -fsSL https://yourai.bdtren.com/cli/install.sh | bash
-yourai: installing yourai v0.0.9 for aarch64-apple-darwin
+yourai: installing yourai v0.1.0 for aarch64-apple-darwin
 ######################################################################## 100.0%
 yourai: checksum verified against https://yourai.bdtren.com/cli and GitHub
 yourai: added /Users/duy/.yourai/bin to PATH in /Users/duy/.zshrc
@@ -52,7 +52,7 @@ Checks
 │ Disk space   ┆ ok     ┆ 256.0 GB free                          ┆            │
 │ Engine build ┆ ok     ┆ llama.cpp b12015 (macos-aarch64-metal) ┆            │
 │ Port 8080    ┆ ok     ┆ free                                   ┆            │
-│ Ollama       ┆ ok     ┆ not installed (not needed)             ┆            │
+│ Ollama       ┆ ok     ┆ not installed (not needed for llama.cpp) ┆          │
 └──────────────┴────────┴────────────────────────────────────────┴────────────┘
 
 What you can run
@@ -271,6 +271,24 @@ files in the project, and nothing extra is downloaded. Pass
 you want media in a non-interactive run. Use `--customize-web-ui false` or
 `--api-styles openai,claude` to override those answers.
 
+**Custom / gated Hugging Face models.** The wizard’s last chat-model option is
+**Custom (Hugging Face GGUF)**. It asks for `owner/name`, the `.gguf` file, an optional
+revision (default `main`), and an optional mmproj. For gated repos, accept the license on
+Hugging Face and set `HF_TOKEN` or save `hf_token` in `.yourai/secrets.toml` (the wizard can
+prompt for that). Non-interactive:
+
+```console
+$ yourai init --yes --name study-buddy --model custom \
+    --model-repo owner/name --model-file model.Q4_K_M.gguf \
+    --model-revision main
+```
+
+**Ollama as the chat runtime.** If `ollama` is on `PATH`, the runtime question offers it
+(and recommends it). Weights still download into `yourai_modules/` via Hugging Face; yourai
+spawns a project-scoped `ollama serve` with `OLLAMA_MODELS` under `yourai_modules/ollama`
+and imports that GGUF as `yourai-chat`. It does **not** use `~/.ollama` or `ollama pull`.
+Duy stays on **llama.cpp** for this walkthrough.
+
 The new folder:
 
 ```text
@@ -284,7 +302,8 @@ study-buddy/
 ├── api/openai/          # .http samples for chosen api_styles
 ├── api/realtime/        # OpenAI chat WebSocket sample
 ├── prompts/system.md    # the instructions the AI follows
-├── data/docs/           # reserved for document search (later release)
+├── data/docs/           # lecture PDFs / notes for `yourai rag index`
+├── data/voices/         # optional TTS voice-clone WAV samples
 ├── outputs/             # images, videos, and audio he creates (step 10)
 ├── scripts/             # start/stop helpers
 ├── README.md
@@ -488,6 +507,12 @@ Creating the image (the first one also loads the model)…
 ✔ saved outputs/images/a-cute-cartoon-plant-cell-diagram-1793519664.png
 • took 8s
 
+$ yourai image "make the labels clearer, night study desk lighting" \
+    --image outputs/images/a-cute-cartoon-plant-cell-diagram-1793519664.png --strength 0.65
+Editing the image (the first one also loads the model)…
+✔ saved outputs/images/make-the-labels-clearer-night-study-desk-….png
+• took 6s
+
 $ yourai speak "Photosynthesis turns light into chemical energy."
 ✔ saved outputs/audio/photosynthesis-turns-light-into-chemical-energy-1793519668.wav (4.5s)
 
@@ -495,9 +520,26 @@ $ yourai transcribe lecture-week3.wav --out lecture-week3.txt
 ✔ wrote lecture-week3.txt (21.3s)
 ```
 
+He drops lecture PDFs into `data/docs/`, turns on document search, and indexes them so
+`yourai chat` (and the agent’s `search_docs` tool) can quote matching snippets:
+
+```console
+$ yourai config set rag.enabled true
+$ yourai rag index
+Document index
+✔ indexed 3 file(s), 12 chunk(s) into .yourai/rag.sqlite
+Next: yourai chat
+```
+
+For a cloned voice, the TTS wizard step (or `--tts-speaker-file me.wav`) copies a short WAV
+into `data/voices/` and sets `text_to_speech.speaker_file`. Short clips can also start from a
+still: `yourai video "the plant cell spins slowly" --image slide.png` (Wan uses `init_image`;
+MiniMax-H3 uses `ref_images`).
+
 Everything still goes through port 8080, so apps can use `/v1/images/generations`,
-`/v1/audio/speech`, and `/v1/audio/transcriptions` too. The image and speech engines only
-use memory while he uses them; `yourai status` shows which are loaded:
+`/v1/images/edits`, `/v1/videos/generations`, `/v1/audio/speech`, and
+`/v1/audio/transcriptions` too. The image and speech engines only use memory while he uses
+them; `yourai status` shows which are loaded:
 
 ```console
 $ yourai status
@@ -614,7 +656,7 @@ Updates for this project
 
 $ yourai self-update --check
 Checking for a new version…
-✔ yourai v0.0.9 is the latest version
+✔ yourai v0.1.0 is the latest version
 ```
 
 ## 15. Done for the semester: `yourai stop` and `yourai uninstall`
@@ -650,7 +692,7 @@ He keeps the models, so reinstalling next semester needs no downloads.
 | 7 | API at `/v1` | Used it from curl and Python |
 | 8 | `yourai config`, `rebuild` | Lowered temperature, raised context |
 | 9 | `config set model.id` + `rebuild` | Upgraded to the 7B model |
-| 10 | `yourai image`, `speak`, `transcribe` | Made a slide picture, listened to and transcribed lectures |
+| 10 | `yourai image` / edit, `speak`, `transcribe`, `rag index` | Slide picture + edit, speech, docs search; optional voice sample / i2v |
 | 11 | `yourai pause`, `resume` | Freed memory, then reloaded |
 | 12 | `yourai logs` | Looked at the server log |
 | 13 | `init --access lan` | Reached it from his phone with an API key |

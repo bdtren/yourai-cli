@@ -212,9 +212,9 @@ pub fn run(fix: bool, network: bool, project: Option<&Path>) -> anyhow::Result<(
         name: "Ollama",
         ok: true,
         detail: if hw.ollama {
-            "installed (yourai uses its own engine)".into()
+            "installed (optional runtime; project models stay under yourai_modules/)".into()
         } else {
-            "not installed (not needed)".into()
+            "not installed (not needed for llama.cpp)".into()
         },
         fix: None,
     });

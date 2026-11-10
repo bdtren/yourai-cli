@@ -71,11 +71,49 @@ impl Gateway {
             .collect()
     }
 
+    /// Encode a local image file as a data URL for the gateway.
+    pub fn encode_file(&self, path: &Path) -> anyhow::Result<String> {
+        let bytes = std::fs::read(path)
+            .map_err(|e| CliError::new(Exit::InvalidConfig, format!("cannot read {}: {e}", path.display())))?;
+        if bytes.is_empty() {
+            return fail_hint(Exit::InvalidConfig, "image file is empty", "pick a PNG, JPEG, or WebP file");
+        }
+        if bytes.len() > 20 * 1024 * 1024 {
+            return fail_hint(Exit::InvalidConfig, "image is larger than 20 MB", "use a smaller file");
+        }
+        let mime = match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            _ => "image/png",
+        };
+        use base64::Engine as _;
+        Ok(format!(
+            "data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    }
+
     /// Returns the saved files, relative to the project.
     pub fn image(&self, body: Value) -> anyhow::Result<Vec<String>> {
         let mut body = body;
         body["response_format"] = json!("url");
         let r = Self::check(self.post("/v1/images/generations").json(&body).send()?)?;
+        Ok(Self::paths(&r.json()?))
+    }
+
+    /// Image edit (img2img) via `/v1/images/edits`.
+    pub fn image_edit(&self, body: Value) -> anyhow::Result<Vec<String>> {
+        let mut body = body;
+        body["response_format"] = json!("url");
+        let r = Self::check(self.post("/v1/images/edits").json(&body).send()?)?;
         Ok(Self::paths(&r.json()?))
     }
 
@@ -142,6 +180,8 @@ pub fn image(
     steps: Option<u32>,
     seed: Option<i64>,
     negative: Option<String>,
+    image: Option<PathBuf>,
+    strength: Option<f64>,
 ) -> anyhow::Result<()> {
     let gw = Gateway::connect(p)?;
     let mut body = json!({"prompt": prompt, "n": n.clamp(1, 4)});
@@ -157,8 +197,26 @@ pub fn image(
     if let Some(s) = negative {
         body["negative_prompt"] = json!(s);
     }
-    let (files, secs) = spinner_while("Creating the image (the first one also loads the model)…", || {
-        gw.image(body)
+    let edit = image.is_some();
+    if let Some(path) = image {
+        body["image"] = json!(gw.encode_file(&path)?);
+        if let Some(s) = strength {
+            body["strength"] = json!(s);
+        }
+    } else if strength.is_some() {
+        ui::warn("--strength is only used with --image");
+    }
+    let msg = if edit {
+        "Editing the image (the first one also loads the model)…"
+    } else {
+        "Creating the image (the first one also loads the model)…"
+    };
+    let (files, secs) = spinner_while(msg, || {
+        if edit {
+            gw.image_edit(body)
+        } else {
+            gw.image(body)
+        }
     })?;
     for f in &files {
         ui::ok(format!("saved {f}"));
@@ -175,6 +233,8 @@ pub fn video(
     fps: Option<u32>,
     steps: Option<u32>,
     seed: Option<i64>,
+    image: Option<PathBuf>,
+    strength: Option<f64>,
 ) -> anyhow::Result<()> {
     let gw = Gateway::connect(p)?;
     let mut body = json!({"prompt": prompt});
@@ -188,6 +248,14 @@ pub fn video(
     }
     if let Some(s) = seed {
         body["seed"] = json!(s);
+    }
+    if let Some(path) = image {
+        body["image"] = json!(gw.encode_file(&path)?);
+        if let Some(s) = strength {
+            body["strength"] = json!(s);
+        }
+    } else if strength.is_some() {
+        ui::warn("--strength is only used with --image");
     }
     let (files, secs) = spinner_while("Creating the video (this takes several minutes)…", || gw.video(body))?;
     for f in &files {

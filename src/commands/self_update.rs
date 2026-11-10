@@ -225,6 +225,7 @@ fn install_script(exe: &Path, version: &str) -> anyhow::Result<()> {
         sha256: Some(&expected),
         size_bytes: 0,
         label: &format!("yourai {version}"),
+        auth_token: None,
     })?;
 
     let bin_name = if windows { "yourai.exe" } else { "yourai" };

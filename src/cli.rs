@@ -159,7 +159,7 @@ pub enum Command {
 
     /// Create an image from a description (needs [image] enabled)
     #[command(
-        after_help = "The image is saved in outputs/images/.\n\nExamples:\n  yourai image \"a red fox in the snow\"\n  yourai image \"a logo for a bakery\" --size 768x768 --n 2"
+        after_help = "The image is saved in outputs/images/.\n\nExamples:\n  yourai image \"a red fox in the snow\"\n  yourai image \"a logo for a bakery\" --size 768x768 --n 2\n  yourai image \"make it night\" --image photo.png --strength 0.7"
     )]
     Image {
         prompt: String,
@@ -178,11 +178,17 @@ pub enum Command {
         /// Things to avoid in the image
         #[arg(long)]
         negative: Option<String>,
+        /// Edit this image (img2img) instead of generating from scratch
+        #[arg(long, value_name = "PATH")]
+        image: Option<PathBuf>,
+        /// How strongly to follow the prompt when --image is set (0.05-1, default 0.75)
+        #[arg(long)]
+        strength: Option<f64>,
     },
 
     /// Create a short video from a description (needs [video] enabled)
     #[command(
-        after_help = "The video is saved in outputs/videos/. A clip takes minutes, even on a fast GPU.\n\nExamples:\n  yourai video \"waves rolling onto a beach at sunset\"\n  yourai video \"a cat walking\" --frames 49 --size 832x480"
+        after_help = "The video is saved in outputs/videos/. A clip takes minutes, even on a fast GPU.\n\nExamples:\n  yourai video \"waves rolling onto a beach at sunset\"\n  yourai video \"a cat walking\" --frames 49 --size 832x480\n  yourai video \"the fox turns its head\" --image fox.png"
     )]
     Video {
         prompt: String,
@@ -201,6 +207,12 @@ pub enum Command {
         /// Seed for repeatable results
         #[arg(long)]
         seed: Option<i64>,
+        /// Condition the clip on this image (image-to-video)
+        #[arg(long, value_name = "PATH")]
+        image: Option<PathBuf>,
+        /// Denoising strength when --image is set for Wan-style models (default 0.75)
+        #[arg(long)]
+        strength: Option<f64>,
     },
 
     /// Read text aloud and save it as a WAV file (needs [text_to_speech] enabled)
@@ -229,8 +241,24 @@ pub enum Command {
         out: Option<PathBuf>,
     },
 
+    /// Index project documents for chat (needs [rag] enabled)
+    #[command(
+        after_help = "Put .txt, .md, or .pdf files in data/docs/, set rag.enabled = true, then:\n\
+          yourai rag index\n  yourai rag status\n\nSnippets are injected into `yourai chat` automatically."
+    )]
+    #[command(subcommand)]
+    Rag(RagCmd),
+
     #[command(name = "__gateway", hide = true)]
     Gateway,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RagCmd {
+    /// Build or rebuild the SQLite FTS index under .yourai/rag.sqlite
+    Index,
+    /// Show whether RAG is on and how many files/chunks are indexed
+    Status,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -246,13 +274,25 @@ pub struct InitArgs {
     /// Goal: chat | code
     #[arg(long)]
     pub goal: Option<String>,
-    /// Model id from the catalog (see `yourai doctor` or the wizard)
+    /// Model id from the catalog (see `yourai doctor` or the wizard), or `custom`
     #[arg(long)]
     pub model: Option<String>,
+    /// Hugging Face repo for `--model custom` (owner/name)
+    #[arg(long)]
+    pub model_repo: Option<String>,
+    /// GGUF file name in that repo for `--model custom`
+    #[arg(long)]
+    pub model_file: Option<String>,
+    /// Hugging Face revision for `--model custom` (default main)
+    #[arg(long)]
+    pub model_revision: Option<String>,
+    /// Optional mmproj GGUF file name for `--model custom` (empty = none)
+    #[arg(long)]
+    pub model_mmproj: Option<String>,
     /// Quantization, for example Q4_K_M
     #[arg(long)]
     pub quant: Option<String>,
-    /// Runtime: llamacpp
+    /// Runtime: llamacpp | ollama
     #[arg(long)]
     pub runtime: Option<String>,
     /// Context length in tokens, for example 4096
@@ -291,6 +331,9 @@ pub struct InitArgs {
     /// Text-to-speech model id, for example qwen3-tts-1.7b
     #[arg(long)]
     pub tts_model: Option<String>,
+    /// Optional WAV sample to clone for TTS (copied into data/voices/)
+    #[arg(long, value_name = "PATH")]
+    pub tts_speaker_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Default, Clone)]

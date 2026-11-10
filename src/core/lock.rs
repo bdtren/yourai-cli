@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::config::{Capability, Config};
+use super::rag;
 
 /// What `yourai build` produced, plus hashes of the config it was built from.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -63,7 +64,8 @@ fn hash<T: Serialize>(v: &T) -> String {
 pub const BUILD_SECTIONS: [&str; 6] = ["model", "runtime", "image", "video", "speech_to_text", "text_to_speech"];
 
 /// Hashes each part of the config that changes what rebuild must do.
-pub fn section_hashes(cfg: &Config, system_prompt_text: &str) -> BTreeMap<String, String> {
+/// `root` is the project folder (used for the RAG docs fingerprint when enabled).
+pub fn section_hashes(cfg: &Config, system_prompt_text: &str, root: &Path) -> BTreeMap<String, String> {
     let mut m = BTreeMap::new();
     m.insert("model".into(), hash(&cfg.model));
     m.insert("runtime".into(), hash(&cfg.runtime));
@@ -79,6 +81,13 @@ pub fn section_hashes(cfg: &Config, system_prompt_text: &str) -> BTreeMap<String
         };
         m.insert(c.key().into(), v);
     }
+    // Config + docs fingerprint so rebuild re-indexes when files under docs_dir change.
+    let rag_key = if cfg.rag.enabled {
+        format!("{}:{}", hash(&cfg.rag), rag::fingerprint(root, &cfg.rag))
+    } else {
+        hash(&cfg.rag)
+    };
+    m.insert("rag".into(), rag_key);
     m
 }
 
@@ -110,23 +119,23 @@ mod tests {
     fn detects_changed_sections() {
         let cfg = sample();
         let lock = Lock {
-            sections: section_hashes(&cfg, "hi"),
+            sections: section_hashes(&cfg, "hi", Path::new(".")),
             ..Default::default()
         };
-        assert!(changed(&lock, &section_hashes(&cfg, "hi")).is_empty());
+        assert!(changed(&lock, &section_hashes(&cfg, "hi", Path::new("."))).is_empty());
 
         let mut c2 = cfg.clone();
         c2.generation.temperature = 0.2;
-        assert_eq!(changed(&lock, &section_hashes(&c2, "hi")), vec!["generation"]);
+        assert_eq!(changed(&lock, &section_hashes(&c2, "hi", Path::new("."))), vec!["generation"]);
 
         let mut c3 = cfg.clone();
         c3.model.quant = "Q8_0".into();
-        let ch = changed(&lock, &section_hashes(&c3, "bye"));
+        let ch = changed(&lock, &section_hashes(&c3, "bye", Path::new(".")));
         assert_eq!(ch, vec!["model", "system_prompt"]);
 
         let mut c4 = cfg.clone();
         c4.image.steps = 4;
-        assert_eq!(changed(&lock, &section_hashes(&c4, "hi")), vec!["image"]);
+        assert_eq!(changed(&lock, &section_hashes(&c4, "hi", Path::new("."))), vec!["image"]);
     }
 
     #[test]

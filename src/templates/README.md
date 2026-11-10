@@ -25,13 +25,20 @@ If you turned on capabilities in `yourai.toml`:
 
 ```bash
 yourai image "a red fox in the snow"     # [image]
+yourai image "make it night" --image fox.png   # edit an image
 yourai video "waves on a beach"          # [video], takes minutes
+yourai video "the fox turns" --image fox.png   # image-to-video
 yourai speak "Hello there"               # [text_to_speech]
 yourai transcribe recording.wav          # [speech_to_text]
+yourai rag index                         # after putting files in data/docs/ and rag.enabled = true
 ```
 
 With `[agent] enabled = true`, `yourai chat` can read files in `agent.workspace` (and write them
 after asking, if `allow_write = true`) and use the capabilities above. Type `/help` in the chat.
+
+Document search: put `.txt`, `.md`, or `.pdf` files in `data/docs/`, run
+`yourai config set rag.enabled true` then `yourai rag index`. Matching snippets are injected into
+`yourai chat` (and the agent can call `search_docs`).
 
 ## Files
 
@@ -39,7 +46,8 @@ after asking, if `allow_write = true`) and use the capabilities above. Type `/he
 |---|---|---|
 | `yourai.toml` | you | All settings. Edit it, then run `yourai rebuild`. |
 | `prompts/system.md` | you | The instructions the AI follows in `yourai chat`. |
-| `data/docs/` | you | Reserved for document search in a future version. |
+| `data/docs/` | you | Documents for search / RAG (`yourai rag index`). |
+| `data/voices/` | you | Optional TTS voice-clone WAV samples (`text_to_speech.speaker_file`). |
 | `scripts/` | you | Optional `start`/`stop` wrappers for shells and PowerShell. |
 | `web/` | you | Browser chat page when `customize_web_ui = true`. Edit freely. |
 | `api/routes.toml` | you | Live HTTP/WS mounts (edit, then `yourai rebuild`). |

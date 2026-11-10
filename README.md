@@ -117,7 +117,9 @@ With capabilities turned on:
 
 ```sh
 yourai image "a red fox in the snow"           # saved in outputs/images/
+yourai image "make it night" --image fox.png   # edit an existing image (img2img)
 yourai video "waves on a beach at sunset"      # takes minutes; saved in outputs/videos/
+yourai video "the fox turns" --image fox.png   # image-to-video
 yourai speak "Your build is ready."            # saved in outputs/audio/
 yourai transcribe meeting.wav                  # prints the text
 yourai chat                                    # "summarize notes.pdf", "draw a logo for…"
@@ -125,7 +127,13 @@ yourai chat                                    # "summarize notes.pdf", "draw a 
 
 Image, video, and speech engines start the first time you use them and unload after
 `server.idle_unload_minutes` (default 10) without use. Only one of image or video is loaded
-at a time.
+at a time. Image edits use `/v1/images/edits`; video `--image` conditions Wan with
+`init_image` and MiniMax-H3 with `ref_images`.
+
+Document search: put `.txt` / `.md` / `.pdf` files in `data/docs/`, then
+`yourai config set rag.enabled true` and `yourai rag index`. Matching snippets are injected
+into `yourai chat`. TTS voice cloning: pick a WAV sample in `yourai init` (or
+`--tts-speaker-file`), stored under `data/voices/` as `text_to_speech.speaker_file`.
 
 ## Commands
 
@@ -139,10 +147,11 @@ at a time.
 | `status` | Running state, port, model, and memory use |
 | `logs [-f] [-n N]` | Show server logs |
 | `chat` | Chat in the terminal; with the agent on it can use tools (`/image`, `/audio`, `/files`, `/reset`, `/help`, `/exit`) |
-| `image <prompt> [--size WxH] [--n N]` | Create images (needs `[image]` enabled) |
-| `video <prompt> [--frames N] [--fps N]` | Create a short video (needs `[video]` enabled) |
+| `image <prompt> [--image PATH] [--strength F] [--size WxH] [--n N]` | Create or edit images (needs `[image]` enabled) |
+| `video <prompt> [--image PATH] [--frames N] [--fps N]` | Create a short video, optionally from an image (needs `[video]`) |
 | `speak <text> [--out FILE]` | Text to speech, saved as WAV (needs `[text_to_speech]`) |
 | `transcribe <file> [--out FILE]` | Speech to text (needs `[speech_to_text]`) |
+| `rag index` / `rag status` | Index `data/docs/` for chat (needs `[rag] enabled`) |
 | `config show\|get\|set\|edit\|validate` | Read or change `yourai.toml` safely |
 | `deploy [-e] [--dry-run]` | Run yourai on a remote VPS (SSH) or expose this PC over an IP (optional tunnel/DNS) |
 | `rebuild [-s] [-f]` | Apply config changes, redoing only what changed |
@@ -165,7 +174,8 @@ my-ai/
 ├── api/handlers/        # optional custom route scripts
 ├── api/<style>/         # .http / sample clients for chosen api_styles
 ├── prompts/system.md    # the system prompt
-├── data/docs/           # reserved for document search (later release)
+├── data/docs/           # documents for RAG (`yourai rag index`)
+├── data/voices/         # optional TTS speaker WAV samples
 ├── outputs/             # images, videos, and audio you create
 ├── scripts/             # start/stop helpers for sh and PowerShell
 ├── README.md
@@ -177,6 +187,12 @@ By default models and engines live in `yourai_modules/`. Delete that folder anyt
 projects can fast-copy it; pass `-f` / `--force` to download from the network instead of using
 that cache (`-f -s` refreshes the saved copy). Set `store.project_modules = false` to skip the
 project module folder and install/run from `~/.yourai` only.
+
+Custom / gated Hugging Face GGUFs: pick **Custom** in `yourai init` (or `--model custom` with
+`--model-repo` / `--model-file`), accept the license on Hugging Face, and set `HF_TOKEN` or
+`.yourai/secrets.toml` `hf_token`. Optional chat runtime `runtime.engine = "ollama"` (when
+`ollama` is on PATH) serves that same project GGUF under `yourai_modules/ollama` — not
+`~/.ollama` and never `ollama pull`.
 
 ## API
 
@@ -190,7 +206,7 @@ project module folder and install/run from `~/.yourai` only.
 
 `api/routes.toml` is the live route table (loaded on `yourai start` / `rebuild`). Style samples
 are scaffolded into `api/openai/`, `api/realtime/` (WS), `api/claude/`, and `api/gemini/` as selected.
-Add custom endpoints with `handler = "api/handlers/…"` (JSON stdin/stdout; executable script or `node` for `.js`).
+Add custom endpoints with `handler = "api/handlers/…"` (JSON stdin/stdout; executable script or `node` for `.js`). Set `stream = true` to pipe raw stdout as SSE. Media routes use upstreams `images_generations`, `videos_generations`, `audio_transcriptions`, and `audio_speech`.
 
 The same port also serves OpenAI-style media endpoints for enabled capabilities:
 
@@ -304,8 +320,8 @@ Unchecked items are the next work queue (rough priority top → bottom within ea
 - [x] `uninstall` (asks separately about models and engines)
 - [x] Shell completions (bash, zsh, fish, powershell, elvish)
 - [x] Clear exit codes and `--debug` / `NO_COLOR`
-- [ ] Streaming / SSE custom handlers (today custom `handler` routes are buffered JSON only)
-- [ ] Move media mounts (`/v1/images|videos|audio…`) into `api/routes.toml`
+- [x] Streaming / SSE custom handlers (`stream = true` pipes handler stdout as the response body)
+- [x] Media mounts (`/v1/images|videos|audio…`) in `api/routes.toml` as built-in upstreams
 
 ### Hardware and models
 - [x] Hardware report with source and confidence
@@ -314,8 +330,8 @@ Unchecked items are the next work queue (rough priority top → bottom within ea
 - [x] Project-local `yourai_modules/` + `yourai.lock`, optional `~/.yourai` cache with `-s`/`-f`
 - [x] Resumable downloads
 - [x] llama.cpp runtime (Metal, CUDA, Vulkan, CPU builds)
-- [ ] Custom / gated Hugging Face models end-to-end in the wizard
-- [ ] Ollama as a managed runtime
+- [x] Custom / gated Hugging Face models end-to-end in the wizard
+- [x] Ollama as a managed runtime
 - [ ] vLLM as a managed runtime
 
 ### Agent and multimodal
@@ -328,10 +344,10 @@ Unchecked items are the next work queue (rough priority top → bottom within ea
 - [x] Text to speech (`yourai speak`, `/v1/audio/speech`) with Qwen3-TTS
 - [x] One port for everything: gateway with on-demand engines and idle unload
 - [x] Config schema 2 with automatic migration of older `yourai.toml` files
-- [ ] Document search / RAG (`data/docs/`, index, retrieve into prompts)
+- [x] Document search / RAG (`data/docs/`, index, retrieve into prompts)
 - [ ] Agent tools that run commands or browse the web
-- [ ] Image editing and image-to-video
-- [ ] Voice cloning from a sample in the wizard
+- [x] Image editing and image-to-video
+- [x] Voice cloning from a sample in the wizard
 
 ### Privacy, security, and network
 - [x] Default bind to `127.0.0.1`

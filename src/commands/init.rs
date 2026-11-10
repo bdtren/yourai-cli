@@ -5,8 +5,8 @@ use console::style;
 use crate::cli::InitArgs;
 use crate::core::catalog::{Catalog, Kind};
 use crate::core::config::{
-    AgentCfg, Capability, Config, GenerationCfg, ImageCfg, ModelCfg, RuntimeCfg, ServerCfg, SttCfg, TtsCfg, VideoCfg,
-    SCHEMA_VERSION,
+    AgentCfg, Capability, Config, GenerationCfg, ImageCfg, ModelCfg, RagCfg, RuntimeCfg, ServerCfg, SttCfg, TtsCfg,
+    VideoCfg, SCHEMA_VERSION,
 };
 use crate::core::hardware::{self, Confidence, Hardware};
 use crate::core::{engine, process, project, recommender, secrets};
@@ -33,6 +33,7 @@ fn flag<'a>(args: &'a InitArgs, key: &str) -> Option<&'a str> {
         "video_model" => args.video_model.as_deref(),
         "stt_model" => args.stt_model.as_deref(),
         "tts_model" => args.tts_model.as_deref(),
+        "tts_speaker" => args.tts_speaker_file.as_ref().map(|_| "sample"),
         _ => None,
     }
 }
@@ -91,31 +92,7 @@ impl Wizard<'_> {
         let value = match (key, value.as_str()) {
             ("port", "custom") => ask_port(&self.answers)?,
             ("model", "custom") => {
-                if !ui::interactive() {
-                    return fail_hint(
-                        Exit::InvalidConfig,
-                        "a custom model needs an interactive terminal",
-                        "run `yourai init` without --yes",
-                    );
-                }
-                self.answers.custom_repo = inquire::Text::new("Hugging Face repo (owner/name):")
-                    .with_validator(|s: &str| {
-                        Ok(if s.split('/').count() == 2 && !s.contains("..") {
-                            inquire::validator::Validation::Valid
-                        } else {
-                            inquire::validator::Validation::Invalid("use the form owner/name".into())
-                        })
-                    })
-                    .prompt()?;
-                self.answers.custom_file = inquire::Text::new("GGUF file name in that repo:")
-                    .with_validator(|s: &str| {
-                        Ok(if s.ends_with(".gguf") && !s.contains('/') {
-                            inquire::validator::Validation::Valid
-                        } else {
-                            inquire::validator::Validation::Invalid("must be a file name ending in .gguf".into())
-                        })
-                    })
-                    .prompt()?;
+                fill_custom_model(&mut self.answers, self.args)?;
                 value
             }
             _ => value,
@@ -134,6 +111,26 @@ impl Wizard<'_> {
         }
         if key == "access" && value == "remote" {
             ui::info("After the project is created, the deploy wizard will help you run on a remote server or expose this PC.");
+        }
+        if key == "tts_speaker" {
+            match value.as_str() {
+                "sample" => {
+                    let path = if let Some(p) = &self.args.tts_speaker_file {
+                        p.display().to_string()
+                    } else if self.yes && !force_prompt {
+                        return fail_hint(
+                            Exit::InvalidConfig,
+                            "voice cloning needs --tts-speaker-file PATH",
+                            "pass a .wav file, or omit voice cloning",
+                        );
+                    } else {
+                        ask_tts_speaker_path()?
+                    };
+                    validate_speaker_src(&path)?;
+                    self.answers.tts_speaker_file = path;
+                }
+                _ => self.answers.tts_speaker_file.clear(),
+            }
         }
         self.answers.set(key, value);
         Ok(true)
@@ -352,7 +349,20 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
             },
             repo: a.custom_repo.clone(),
             file: a.custom_file.clone(),
-            mmproj: "auto".into(),
+            revision: if a.model == "custom" {
+                if a.custom_revision.is_empty() {
+                    "main".into()
+                } else {
+                    a.custom_revision.clone()
+                }
+            } else {
+                "main".into()
+            },
+            mmproj: if a.model == "custom" {
+                a.custom_mmproj.clone()
+            } else {
+                "auto".into()
+            },
         },
         runtime: RuntimeCfg {
             engine: a.runtime.clone(),
@@ -398,12 +408,27 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
         text_to_speech: TtsCfg {
             enabled: tts_on,
             model: tts_model,
+            speaker_file: planned_speaker_rel(speaker_src(a, &args)).unwrap_or_default(),
             ..Default::default()
         },
+        rag: RagCfg::default(),
     };
     cfg.validate()?;
     let key = lan.then(secrets::generate_key);
     project::scaffold(&dir, &cfg, key.as_deref())?;
+    if tts_on {
+        if let Some(src) = speaker_src(a, &args) {
+            install_tts_speaker(&dir, src)?;
+        }
+    }
+    if !a.hf_token.is_empty() {
+        secrets::write_hf_token(&dir, &a.hf_token)?;
+        ui::info(format!(
+            "Hugging Face token saved to {} ({})",
+            secrets::path(&dir).display(),
+            secrets::redact(&a.hf_token)
+        ));
+    }
 
     ui::ok(format!("Created {}", dir.display()));
     if let Some(k) = key {
@@ -436,6 +461,185 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn fill_custom_model(a: &mut Answers, args: &InitArgs) -> anyhow::Result<()> {
+    let from_flags = args.model_repo.as_ref().zip(args.model_file.as_ref());
+    if let Some((repo, file)) = from_flags {
+        if repo.split('/').count() != 2 || repo.contains("..") {
+            return fail_hint(
+                Exit::InvalidConfig,
+                "invalid --model-repo",
+                "use the form owner/name",
+            );
+        }
+        if !file.ends_with(".gguf") || file.contains('/') {
+            return fail_hint(
+                Exit::InvalidConfig,
+                "invalid --model-file",
+                "must be a file name ending in .gguf",
+            );
+        }
+        a.custom_repo = repo.clone();
+        a.custom_file = file.clone();
+        a.custom_revision = args
+            .model_revision
+            .clone()
+            .unwrap_or_else(|| "main".into());
+        a.custom_mmproj = args.model_mmproj.clone().unwrap_or_default();
+        if let Some(tok) = args_hf_token_from_env_or_none() {
+            a.hf_token = tok;
+        }
+        return Ok(());
+    }
+    if !ui::interactive() {
+        return fail_hint(
+            Exit::InvalidConfig,
+            "a custom model needs --model-repo and --model-file (or an interactive terminal)",
+            "example: yourai init --yes --model custom --model-repo owner/name --model-file model.Q4_K_M.gguf",
+        );
+    }
+    a.custom_repo = inquire::Text::new("Hugging Face repo (owner/name):")
+        .with_validator(|s: &str| {
+            Ok(if s.split('/').count() == 2 && !s.contains("..") {
+                inquire::validator::Validation::Valid
+            } else {
+                inquire::validator::Validation::Invalid("use the form owner/name".into())
+            })
+        })
+        .prompt()?;
+    a.custom_file = inquire::Text::new("GGUF file name in that repo:")
+        .with_validator(|s: &str| {
+            Ok(if s.ends_with(".gguf") && !s.contains('/') {
+                inquire::validator::Validation::Valid
+            } else {
+                inquire::validator::Validation::Invalid("must be a file name ending in .gguf".into())
+            })
+        })
+        .prompt()?;
+    a.custom_revision = inquire::Text::new("Revision (branch, tag, or commit):")
+        .with_default("main")
+        .with_validator(|s: &str| {
+            Ok(if !s.trim().is_empty() && !s.contains("..") && !s.contains('/') {
+                inquire::validator::Validation::Valid
+            } else {
+                inquire::validator::Validation::Invalid("use a simple revision like main or a commit id".into())
+            })
+        })
+        .prompt()?;
+    a.custom_mmproj = inquire::Text::new("Optional mmproj GGUF (blank = none):")
+        .with_default("")
+        .with_validator(|s: &str| {
+            Ok(if s.is_empty() || (s.ends_with(".gguf") && !s.contains('/')) {
+                inquire::validator::Validation::Valid
+            } else {
+                inquire::validator::Validation::Invalid("must be empty or a .gguf file name".into())
+            })
+        })
+        .prompt()?;
+    if args_hf_token_from_env_or_none().is_some() {
+        ui::info("Using HF_TOKEN from the environment for gated downloads.");
+    } else {
+        ui::info("Gated models need a Hugging Face token and an accepted license on the model page.");
+        if inquire::Confirm::new("Save a Hugging Face token in .yourai/secrets.toml for downloads?")
+            .with_default(false)
+            .prompt()?
+        {
+            a.hf_token = inquire::Password::new("Hugging Face token:")
+                .without_confirmation()
+                .prompt()?;
+        }
+    }
+    Ok(())
+}
+
+fn args_hf_token_from_env_or_none() -> Option<String> {
+    std::env::var("HF_TOKEN").ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+}
+
+fn ask_tts_speaker_path() -> anyhow::Result<String> {
+    inquire::Text::new("Path to a WAV voice sample:")
+        .with_help_message("A few seconds of clean speech works best")
+        .with_validator(|s: &str| {
+            Ok(if validate_speaker_src(s).is_ok() {
+                inquire::validator::Validation::Valid
+            } else {
+                inquire::validator::Validation::Invalid("need an existing .wav file".into())
+            })
+        })
+        .prompt()
+        .map_err(Into::into)
+}
+
+fn validate_speaker_src(path: &str) -> anyhow::Result<()> {
+    let p = std::path::Path::new(path.trim());
+    if !p.is_file() {
+        return fail_hint(
+            Exit::InvalidConfig,
+            format!("voice sample `{path}` was not found"),
+            "pass a path to an existing .wav file",
+        );
+    }
+    if !p
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    {
+        return fail_hint(
+            Exit::InvalidConfig,
+            "voice sample must be a .wav file",
+            "convert the recording to WAV, or skip voice cloning",
+        );
+    }
+    Ok(())
+}
+
+fn speaker_src<'a>(a: &'a Answers, args: &'a InitArgs) -> Option<&'a str> {
+    if !a.tts_speaker_file.is_empty() {
+        return Some(a.tts_speaker_file.as_str());
+    }
+    args.tts_speaker_file.as_ref().and_then(|p| p.to_str())
+}
+
+/// Relative path that will be written into yourai.toml when a sample is provided.
+fn planned_speaker_rel(src: Option<&str>) -> Option<String> {
+    let src = src?.trim();
+    if src.is_empty() {
+        return None;
+    }
+    let name = std::path::Path::new(src)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("speaker.wav");
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe = if safe.to_ascii_lowercase().ends_with(".wav") {
+        safe
+    } else {
+        format!("{safe}.wav")
+    };
+    Some(format!("data/voices/{safe}"))
+}
+
+/// Copy the sample into `data/voices/` after scaffold. Config already points at the relative path.
+fn install_tts_speaker(dir: &std::path::Path, src: &str) -> anyhow::Result<()> {
+    validate_speaker_src(src)?;
+    let rel = planned_speaker_rel(Some(src)).expect("src non-empty");
+    let dest = dir.join(&rel);
+    // Refuse path escape the same way config validation does.
+    crate::core::paths::inside(dir, &rel)?;
+    std::fs::create_dir_all(dest.parent().unwrap())?;
+    std::fs::copy(src.trim(), &dest)?;
+    ui::info(format!("copied voice sample to {rel}"));
+    Ok(())
+}
+
 fn label_for(w: &Wizard, key: &str) -> String {
     let c = Ctx {
         hw: &w.hw,
@@ -445,6 +649,9 @@ fn label_for(w: &Wizard, key: &str) -> String {
     let v = w.answers.get(key);
     if key == "model" && v == "custom" {
         return format!("{}/{}", w.answers.custom_repo, w.answers.custom_file);
+    }
+    if key == "tts_speaker" && v == "sample" && !w.answers.tts_speaker_file.is_empty() {
+        return w.answers.tts_speaker_file.clone();
     }
     if key == "capabilities" {
         if v == "none" {
@@ -490,6 +697,7 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
             "video_model" => "Video model",
             "stt_model" => "Speech-to-text model",
             "tts_model" => "Voice model",
+            "tts_speaker" => "Voice sample",
             "interface" => "Interface",
             "customize_web_ui" => "Editable web UI",
             "api_styles" => "API styles",
@@ -593,4 +801,23 @@ fn print_review(w: &Wizard, dir: &std::path::Path) {
         style("Nothing is downloaded yet. `yourai build` downloads into yourai_modules/ after you confirm the model license.")
             .dim()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn speaker_copy_sets_relative_path_under_voices() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("My Voice!.wav");
+        fs::write(&src, b"RIFF....WAVEfmt ").unwrap();
+        let proj = tmp.path().join("proj");
+        fs::create_dir_all(&proj).unwrap();
+        let rel = planned_speaker_rel(Some(src.to_str().unwrap())).unwrap();
+        assert_eq!(rel, "data/voices/My_Voice_.wav");
+        install_tts_speaker(&proj, src.to_str().unwrap()).unwrap();
+        assert!(proj.join(&rel).is_file());
+    }
 }

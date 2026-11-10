@@ -80,6 +80,10 @@ pub struct Answers {
     pub model: String,
     pub custom_repo: String,
     pub custom_file: String,
+    pub custom_revision: String,
+    pub custom_mmproj: String,
+    /// Hugging Face token collected during init (written to secrets.toml).
+    pub hf_token: String,
     pub quant: String,
     pub runtime: String,
     pub ctx: String,
@@ -87,6 +91,10 @@ pub struct Answers {
     pub video_model: String,
     pub stt_model: String,
     pub tts_model: String,
+    /// Source path to a WAV sample (copied into data/voices/ on scaffold).
+    pub tts_speaker_file: String,
+    /// "default" | "sample" from the wizard question.
+    pub tts_speaker: String,
     pub interface: String,
     /// "true" | "false" — use project `web/` vs default llama UI.
     pub customize_web_ui: String,
@@ -110,6 +118,7 @@ impl Answers {
             "video_model" => &self.video_model,
             "stt_model" => &self.stt_model,
             "tts_model" => &self.tts_model,
+            "tts_speaker" => &self.tts_speaker,
             "interface" => &self.interface,
             "customize_web_ui" => &self.customize_web_ui,
             "api_styles" => &self.api_styles,
@@ -132,6 +141,7 @@ impl Answers {
             "video_model" => self.video_model = v,
             "stt_model" => self.stt_model = v,
             "tts_model" => self.tts_model = v,
+            "tts_speaker" => self.tts_speaker = v,
             "interface" => self.interface = v,
             "customize_web_ui" => self.customize_web_ui = v,
             "api_styles" => self.api_styles = v,

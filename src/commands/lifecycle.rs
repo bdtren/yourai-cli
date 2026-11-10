@@ -101,7 +101,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
         );
     };
     let mut cfg = cfg.clone();
-    let changed = lock::changed(&lk, &lock::section_hashes(&cfg, &p.system_prompt(&cfg)));
+    let changed = lock::changed(&lk, &lock::section_hashes(&cfg, &p.system_prompt(&cfg), &p.root));
     if changed.iter().any(|s| lock::BUILD_SECTIONS.contains(&s.as_str())) {
         return fail_hint(
             Exit::Runtime,
@@ -215,7 +215,7 @@ pub fn launch(p: &Project, cfg: &Config) -> anyhow::Result<()> {
     }
     pb.finish_and_clear();
     let mut lk = lk;
-    lk.sections = lock::section_hashes(&cfg, &p.system_prompt(&cfg));
+    lk.sections = lock::section_hashes(&cfg, &p.system_prompt(&cfg), &p.root);
     lock::save(&p.lock_path(), &lk)?;
     ui::ok(format!(
         "{} is running (pid {pid}, loaded in {:.0}s)",
@@ -446,7 +446,7 @@ pub fn status(p: &Project) -> anyhow::Result<()> {
         }
     }
     if let Some(l) = &lk {
-        let changed = lock::changed(l, &lock::section_hashes(&cfg, &p.system_prompt(&cfg)));
+        let changed = lock::changed(l, &lock::section_hashes(&cfg, &p.system_prompt(&cfg), &p.root));
         if !changed.is_empty() {
             t.add_row(vec![
                 "Pending changes".to_string(),

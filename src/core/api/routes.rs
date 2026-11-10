@@ -8,7 +8,25 @@ use serde::Deserialize;
 use crate::core::paths;
 use crate::error::{CliError, Exit};
 
-pub const BUILTIN_UPSTREAMS: &[&str] = &["openai_chat", "openai_chat_ws", "claude_messages", "gemini_generate"];
+pub const BUILTIN_UPSTREAMS: &[&str] = &[
+    "openai_chat",
+    "openai_chat_ws",
+    "claude_messages",
+    "gemini_generate",
+    "images_generations",
+    "images_edits",
+    "videos_generations",
+    "audio_transcriptions",
+    "audio_speech",
+];
+
+pub const MEDIA_UPSTREAMS: &[&str] = &[
+    "images_generations",
+    "images_edits",
+    "videos_generations",
+    "audio_transcriptions",
+    "audio_speech",
+];
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct RoutesFile {
@@ -26,6 +44,12 @@ pub struct RouteEntry {
     pub handler: Option<String>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// When true with `handler`, stream raw stdout as the response body (SSE-friendly).
+    #[serde(default)]
+    pub stream: bool,
+    /// Content-Type for `stream = true` routes (default `text/event-stream`).
+    #[serde(default)]
+    pub content_type: Option<String>,
 }
 
 impl RouteEntry {
@@ -35,6 +59,24 @@ impl RouteEntry {
 
     pub fn default_timeout_ms(&self) -> u64 {
         self.timeout_ms.unwrap_or(30_000)
+    }
+
+    pub fn stream_content_type(&self) -> &str {
+        self.content_type
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("text/event-stream")
+    }
+}
+
+impl RoutesFile {
+    /// True if any route uses a media built-in upstream.
+    pub fn has_media_upstream(&self) -> bool {
+        self.route.iter().any(|r| {
+            r.upstream
+                .as_deref()
+                .is_some_and(|u| MEDIA_UPSTREAMS.contains(&u))
+        })
     }
 }
 
@@ -80,6 +122,11 @@ pub fn validate(root: &Path, file: &RoutesFile) -> anyhow::Result<()> {
                         BUILTIN_UPSTREAMS.join(", ")
                     )));
                 }
+                if r.stream {
+                    return Err(invalid(format!(
+                        "route[{i}]: stream = true is only valid with handler (not upstream)"
+                    )));
+                }
             }
             (false, true) => {
                 let h = r.handler.as_deref().unwrap();
@@ -105,11 +152,14 @@ pub fn scaffold_toml(api_styles: &[String]) -> String {
     let mut out = String::from(
         r#"# Public HTTP/WS mounts for this project. Loaded when the gateway starts
 # (`yourai start` / `yourai rebuild`). Edit paths, remap built-ins, or add handlers.
-# Built-in upstreams: openai_chat | openai_chat_ws | claude_messages | gemini_generate
-# Media routes (/v1/images|videos|audio…) stay fixed in the gateway for now.
+# Built-in upstreams:
+#   openai_chat | openai_chat_ws | claude_messages | gemini_generate
+#   images_generations | images_edits | videos_generations | audio_transcriptions | audio_speech
 #
-# Custom handlers: JSON on stdin/stdout (see handlers/). Prefer an executable
-# script, or a .js/.mjs file run with `node` when available.
+# Custom handlers: JSON on stdin. Prefer an executable script, or a .js/.mjs file
+# run with `node` when available.
+#   Buffered (default): stdout JSON { status, headers, body_b64 }
+#   stream = true: stdout is the raw response body (default Content-Type text/event-stream)
 
 "#,
     );
@@ -155,9 +205,41 @@ upstream = "gemini_generate"
     out.push_str(
         r#"[[route]]
 method = "POST"
+path = "/v1/images/generations"
+upstream = "images_generations"
+
+[[route]]
+method = "POST"
+path = "/v1/images/edits"
+upstream = "images_edits"
+
+[[route]]
+method = "POST"
+path = "/v1/videos/generations"
+upstream = "videos_generations"
+
+[[route]]
+method = "POST"
+path = "/v1/audio/transcriptions"
+upstream = "audio_transcriptions"
+
+[[route]]
+method = "POST"
+path = "/v1/audio/speech"
+upstream = "audio_speech"
+
+[[route]]
+method = "POST"
 path = "/v2/echo"
 handler = "api/handlers/example_echo.js"
 # optional: timeout_ms = 30000
+
+[[route]]
+method = "POST"
+path = "/v2/stream-echo"
+handler = "api/handlers/example_stream.js"
+stream = true
+# optional: content_type = "text/event-stream"
 "#,
     );
     out
@@ -218,18 +300,63 @@ handler = "../outside.js"
     }
 
     #[test]
+    fn parse_stream_and_media_upstreams() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("api/handlers")).unwrap();
+        std::fs::write(root.join("api/handlers/s.js"), "x").unwrap();
+
+        let text = r#"
+[[route]]
+method = "POST"
+path = "/v1/images/generations"
+upstream = "images_generations"
+
+[[route]]
+method = "POST"
+path = "/v2/stream-echo"
+handler = "api/handlers/s.js"
+stream = true
+content_type = "text/event-stream"
+"#;
+        let file: RoutesFile = toml::from_str(text).unwrap();
+        validate(root, &file).unwrap();
+        assert!(file.has_media_upstream());
+        assert!(file.route[1].stream);
+        assert_eq!(file.route[1].stream_content_type(), "text/event-stream");
+
+        let bad = r#"
+[[route]]
+method = "POST"
+path = "/v1/chat/completions"
+upstream = "openai_chat"
+stream = true
+"#;
+        let file: RoutesFile = toml::from_str(bad).unwrap();
+        assert!(validate(root, &file).is_err());
+    }
+
+    #[test]
     fn load_missing_is_none() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(load(tmp.path()).unwrap().is_none());
     }
 
     #[test]
-    fn scaffold_includes_styles() {
+    fn scaffold_includes_styles_media_and_stream() {
         let t = scaffold_toml(&["openai".into(), "claude".into()]);
         assert!(t.contains("path = \"/v1/chat/ws\""));
         assert!(t.contains("upstream = \"openai_chat_ws\""));
         assert!(t.contains("upstream = \"claude_messages\""));
         assert!(!t.contains("upstream = \"gemini_generate\""));
         assert!(t.contains("/v2/echo"));
+        assert!(t.contains("upstream = \"images_generations\""));
+        assert!(t.contains("upstream = \"images_edits\""));
+        assert!(t.contains("path = \"/v1/images/edits\""));
+        assert!(t.contains("upstream = \"videos_generations\""));
+        assert!(t.contains("upstream = \"audio_transcriptions\""));
+        assert!(t.contains("upstream = \"audio_speech\""));
+        assert!(t.contains("path = \"/v2/stream-echo\""));
+        assert!(t.contains("stream = true"));
     }
 }

@@ -19,6 +19,7 @@ pub const ORDER: &[&str] = &[
     "video_model",
     "stt_model",
     "tts_model",
+    "tts_speaker",
     "interface",
     "customize_web_ui",
     "api_styles",
@@ -57,6 +58,8 @@ pub fn build(key: &str, c: &Ctx) -> anyhow::Result<Option<Question>> {
         "video_model" => cap_model(c, Capability::Video),
         "stt_model" => cap_model(c, Capability::SpeechToText),
         "tts_model" => cap_model(c, Capability::TextToSpeech),
+        // Free-text path; handled specially in init (options are skip / provide).
+        "tts_speaker" => tts_speaker(c),
         "interface" => Some(interface(c)),
         "customize_web_ui" => customize_web_ui(c),
         "api_styles" => Some(api_styles()),
@@ -288,6 +291,33 @@ fn cap_model(c: &Ctx, cap: Capability) -> Option<Question> {
     })
 }
 
+fn tts_speaker(c: &Ctx) -> Option<Question> {
+    if !c.answers.has_cap("tts") {
+        return None;
+    }
+    let options = vec![
+        Opt::new(
+            "default",
+            "Default voice",
+            "Use the model's built-in speaker. You can add a sample later with text_to_speech.speaker_file.",
+        ),
+        Opt::new(
+            "sample",
+            "Clone from a WAV sample",
+            "Copy a short .wav of your voice (or another speaker) into the project for TTS.",
+        ),
+    ];
+    Some(Question {
+        multi: None,
+        key: "tts_speaker",
+        title: "Voice cloning sample?".into(),
+        why: "Optional. A few seconds of clean speech in a WAV file works best.".into(),
+        options,
+        recommended: 0,
+        reason: "Recommended for first-time setup: start with the default voice.".into(),
+    })
+}
+
 fn tier_explain(size: &str) -> &'static str {
     match size {
         "Small" => "Fast and light, runs on almost any laptop. Good for simple Q&A, weaker at complex reasoning.",
@@ -414,33 +444,45 @@ fn quant(c: &Ctx) -> Option<Question> {
 }
 
 fn runtime(c: &Ctx) -> Question {
-    let ollama_reason = if c.hw.ollama {
-        "Ollama is installed, but yourai cannot manage it yet (planned)".to_string()
+    let ollama_unavailable = if c.hw.ollama {
+        None
     } else {
-        "Ollama is not installed; support is planned".to_string()
+        Some("Ollama is not installed (`ollama` not on PATH)".to_string())
     };
     let vllm_reason = if c.hw.os_family == "linux" && c.hw.gpu_vendor == GpuVendor::Nvidia {
         "planned for a later version".to_string()
     } else {
         "needs an NVIDIA GPU on Linux, and is planned for a later version".to_string()
     };
+    let recommend_ollama = c.hw.ollama;
     Question {
         multi: None,
         key: "runtime",
         title: "Which runtime? (the engine that runs the model)".into(),
-        why: "The runtime loads the model and serves answers.".into(),
+        why: "The runtime loads the model and serves answers. Models always download into yourai_modules/ (not the Ollama library cache)."
+            .into(),
         options: vec![
             Opt::new(
                 "llamacpp",
                 "llama.cpp",
                 "Built-in engine, works on CPU, NVIDIA, AMD, Intel, and Apple. Downloaded automatically.",
             ),
-            Opt::new("ollama", "Ollama", "Use an existing Ollama install.").unavailable_if(Some(ollama_reason)),
+            Opt::new(
+                "ollama",
+                "Ollama",
+                "Uses the ollama binary on PATH; serves the project GGUF under yourai_modules/ (not ~/.ollama).",
+            )
+            .unavailable_if(ollama_unavailable),
             Opt::new("vllm", "vLLM", "High-throughput serving for many users at once.")
                 .unavailable_if(Some(vllm_reason)),
         ],
-        recommended: 0,
-        reason: "Recommended because it supports your hardware with no extra installs.".into(),
+        recommended: if recommend_ollama { 1 } else { 0 },
+        reason: if recommend_ollama {
+            "Recommended: Ollama is installed; yourai will still keep weights under yourai_modules/."
+                .into()
+        } else {
+            "Recommended because it supports your hardware with no extra installs.".into()
+        },
     }
 }
 
@@ -688,6 +730,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn ollama_runtime_available_when_detected() {
+        let catalog = Catalog::bundled();
+        let mut hw = fixtures::nvidia_8gb();
+        hw.ollama = true;
+        let answers = Answers::default();
+        let c = Ctx {
+            hw: &hw,
+            catalog: &catalog,
+            answers: &answers,
+        };
+        let q = build("runtime", &c).unwrap().unwrap();
+        assert!(q.find("ollama").unwrap().unavailable.is_none());
+        assert_eq!(q.recommended_opt().value, "ollama");
+        hw.ollama = false;
+        let c = Ctx {
+            hw: &hw,
+            catalog: &catalog,
+            answers: &answers,
+        };
+        let q = build("runtime", &c).unwrap().unwrap();
+        assert!(q.find("ollama").unwrap().unavailable.is_some());
+        assert_eq!(q.recommended_opt().value, "llamacpp");
     }
 
     #[test]

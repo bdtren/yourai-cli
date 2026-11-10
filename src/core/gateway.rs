@@ -24,6 +24,7 @@ use serde_json::{json, Value};
 use super::config::Config;
 use super::engine::{self, Bind};
 use super::lock::{Lock, ModelLock};
+use super::ollama;
 use super::project::Project;
 use super::store;
 use super::{paths, process, secrets};
@@ -96,6 +97,7 @@ pub(crate) struct Gw {
 pub(crate) type Shared = Arc<Gw>;
 
 /// An error response in the OpenAI shape: `{"error": {"message", "type"}}`.
+#[derive(Debug)]
 pub struct ApiError(pub(crate) StatusCode, pub(crate) String);
 
 impl ApiError {
@@ -214,9 +216,30 @@ impl Gw {
         }
     }
 
+    fn chat_uses_ollama(&self) -> bool {
+        self.cfg.runtime.engine == "ollama"
+    }
+
+    fn ollama_models_path(&self) -> PathBuf {
+        if self.cfg.store.project_modules {
+            ollama::ollama_models_dir(&self.root.join(store::MODULE_DIR))
+        } else {
+            ollama::ollama_models_dir(&paths::home())
+        }
+    }
+
     fn command(&self, slot: Slot, port: u16) -> Result<(PathBuf, Vec<String>), ApiError> {
         let threads = self.cfg.runtime.threads;
         Ok(match slot {
+            Slot::Chat if self.chat_uses_ollama() => {
+                let exe = PathBuf::from(&self.lock.engine_exe);
+                let exe = if exe.is_file() {
+                    exe
+                } else {
+                    ollama::find_binary().map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?
+                };
+                (exe, ollama::serve_args())
+            }
             Slot::Chat => {
                 let mmproj = if self.lock.mmproj_path.is_empty() {
                     None
@@ -328,7 +351,12 @@ impl Gw {
             .ok_or_else(|| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "no free local port for the engine"))?;
         let (exe, args) = self.command(slot, port)?;
         log(format!("starting {} engine on 127.0.0.1:{port}", slot.name()));
-        let pid = process::spawn_detached(&exe, &args, &self.log_file(slot), &self.root).map_err(|e| {
+        let env = if slot == Slot::Chat && self.chat_uses_ollama() {
+            ollama::serve_env("127.0.0.1", port, &self.ollama_models_path())
+        } else {
+            Vec::new()
+        };
+        let pid = process::spawn_detached_env(&exe, &args, &self.log_file(slot), &self.root, &env).map_err(|e| {
             ApiError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("could not start the engine: {e}"),
@@ -346,34 +374,49 @@ impl Gw {
         );
         self.save_records();
 
-        let url = format!("http://127.0.0.1:{port}{}", slot.ready_path());
-        let deadline = Instant::now() + Duration::from_secs(900);
-        loop {
-            if !process::is_ours(pid, started) {
-                self.procs.lock().unwrap().remove(&slot);
-                self.save_records();
-                return Err(ApiError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!(
-                        "the {} engine stopped while loading its model; see {}",
-                        slot.name(),
-                        self.log_file(slot).display()
-                    ),
-                ));
-            }
-            if let Ok(r) = self.http.get(&url).timeout(Duration::from_secs(3)).send().await {
-                if r.status().is_success() {
-                    break;
-                }
-            }
-            if Instant::now() > deadline {
+        if slot == Slot::Chat && self.chat_uses_ollama() {
+            let bin = exe.clone();
+            let models = self.ollama_models_path();
+            let import = tokio::task::spawn_blocking(move || {
+                ollama::ensure_model_imported(&bin, &models, "127.0.0.1", port)
+            })
+            .await
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, e.to_string()));
+            if let Err(e) = import {
                 self.stop(slot).await;
-                return Err(ApiError::new(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    format!("the {} engine did not load its model in 15 minutes", slot.name()),
-                ));
+                return Err(e);
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+        } else {
+            let url = format!("http://127.0.0.1:{port}{}", slot.ready_path());
+            let deadline = Instant::now() + Duration::from_secs(900);
+            loop {
+                if !process::is_ours(pid, started) {
+                    self.procs.lock().unwrap().remove(&slot);
+                    self.save_records();
+                    return Err(ApiError::new(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!(
+                            "the {} engine stopped while loading its model; see {}",
+                            slot.name(),
+                            self.log_file(slot).display()
+                        ),
+                    ));
+                }
+                if let Ok(r) = self.http.get(&url).timeout(Duration::from_secs(3)).send().await {
+                    if r.status().is_success() {
+                        break;
+                    }
+                }
+                if Instant::now() > deadline {
+                    self.stop(slot).await;
+                    return Err(ApiError::new(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        format!("the {} engine did not load its model in 15 minutes", slot.name()),
+                    ));
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
         }
         log(format!("{} engine ready", slot.name()));
         if let Some(p) = self.procs.lock().unwrap().get_mut(&slot) {
@@ -507,6 +550,137 @@ fn pick(req: Option<u64>, cfg: u32, defaults: &Value, key: &str, fallback: u64) 
         .unwrap_or(fallback)
 }
 
+const MAX_INPUT_IMAGE: usize = 20 * 1024 * 1024;
+
+/// Denoising strength for img2img / Wan i2v (default 0.75).
+pub fn clamp_strength(v: Option<f64>) -> f64 {
+    v.unwrap_or(0.75).clamp(0.05, 1.0)
+}
+
+fn image_ext(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp"))
+}
+
+fn mime_for_image_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => "image/png",
+    }
+}
+
+/// Turn a data URL, raw base64, or file path into a `data:image/...;base64,...` string for sd.cpp.
+pub fn encode_image_input(root: &Path, image: &str) -> Result<String, ApiError> {
+    let s = image.trim();
+    if s.is_empty() {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "image must not be empty"));
+    }
+    let (mime, bytes) = if let Some(rest) = s.strip_prefix("data:") {
+        let (meta, data) = rest.split_once(',').ok_or_else(|| {
+            ApiError::new(StatusCode::BAD_REQUEST, "image data URL is missing base64 data")
+        })?;
+        if !meta.contains("base64") {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "image data URL must be base64-encoded",
+            ));
+        }
+        let mime = meta.split(';').next().unwrap_or("image/png").to_string();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid image base64: {e}")))?;
+        (mime, bytes)
+    } else {
+        let path = Path::new(s);
+        let as_file = path.is_absolute()
+            || s.contains('/')
+            || s.contains('\\')
+            || image_ext(path)
+            || root.join(path).is_file();
+        if as_file {
+            let file = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            };
+            if !file.is_file() {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("image file not found: {}", file.display()),
+                ));
+            }
+            let bytes = std::fs::read(&file).map_err(|e| {
+                ApiError::new(StatusCode::BAD_REQUEST, format!("could not read image: {e}"))
+            })?;
+            (mime_for_image_path(&file).to_string(), bytes)
+        } else {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(s).map_err(|e| {
+                ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("image must be a file path, data URL, or base64 ({e})"),
+                )
+            })?;
+            ("image/png".into(), bytes)
+        }
+    };
+    if bytes.is_empty() {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "image is empty"));
+    }
+    if bytes.len() > MAX_INPUT_IMAGE {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "image is larger than 20 MB",
+        ));
+    }
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// JSON body for `/sdcpp/v1/img_gen` (text-to-image or img2img when `init_image` is set).
+pub fn image_job_body(
+    prompt: &str,
+    negative_prompt: &str,
+    width: u64,
+    height: u64,
+    seed: i64,
+    n: u32,
+    steps: u64,
+    cfg_scale: f64,
+    init_image: Option<&str>,
+    strength: Option<f64>,
+) -> Value {
+    let mut body = json!({
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "batch_count": n,
+        "sample_params": {
+            "sample_steps": steps,
+            "guidance": {"txt_cfg": cfg_scale, "img_cfg": cfg_scale, "distilled_guidance": 3.5}
+        },
+        "output_format": "png"
+    });
+    if let Some(img) = init_image {
+        body["init_image"] = json!(img);
+        body["strength"] = json!(clamp_strength(strength));
+    }
+    body
+}
+
 #[derive(Deserialize)]
 struct ImageReq {
     prompt: String,
@@ -519,21 +693,49 @@ struct ImageReq {
     response_format: Option<String>,
 }
 
-async fn images(State(gw): State<Shared>, Json(req): Json<ImageReq>) -> Result<Json<Value>, ApiError> {
-    if req.prompt.trim().is_empty() {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, "prompt must not be empty"));
+#[derive(Deserialize)]
+struct ImageEditReq {
+    prompt: String,
+    /// Data URL, raw base64, or path under the project (or absolute).
+    image: String,
+    #[serde(default)]
+    negative_prompt: String,
+    n: Option<u32>,
+    size: Option<String>,
+    steps: Option<u64>,
+    seed: Option<i64>,
+    strength: Option<f64>,
+    response_format: Option<String>,
+}
+
+fn parse_image_size(size: Option<&str>) -> Result<Option<(u32, u32)>, ApiError> {
+    match size {
+        Some(s) => parse_size(s)
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "size must look like 512x512 (multiples of 16, 64-2048)",
+                )
+            })
+            .map(Some),
+        None => Ok(None),
     }
+}
+
+async fn run_image_job(
+    gw: &Gw,
+    prompt: &str,
+    negative_prompt: &str,
+    size: Option<(u32, u32)>,
+    steps: Option<u64>,
+    seed: Option<i64>,
+    n: Option<u32>,
+    response_format: Option<&str>,
+    init_image: Option<&str>,
+    strength: Option<f64>,
+) -> Result<Json<Value>, ApiError> {
     let m = gw.model(Slot::Image)?.clone();
     let d = &m.defaults;
-    let size = match req.size.as_deref() {
-        Some(s) => Some(parse_size(s).ok_or_else(|| {
-            ApiError::new(
-                StatusCode::BAD_REQUEST,
-                "size must look like 512x512 (multiples of 16, 64-2048)",
-            )
-        })?),
-        None => None,
-    };
     let c = &gw.cfg.image;
     let width = size
         .map(|s| s.0 as u64)
@@ -541,25 +743,24 @@ async fn images(State(gw): State<Shared>, Json(req): Json<ImageReq>) -> Result<J
     let height = size
         .map(|s| s.1 as u64)
         .unwrap_or_else(|| pick(None, c.height, d, "height", 512));
-    let steps = pick(req.steps, c.steps, d, "steps", 20);
+    let steps = pick(steps, c.steps, d, "steps", 20);
     let cfg_scale = d.get("cfg_scale").and_then(Value::as_f64).unwrap_or(7.0);
-    let n = req.n.unwrap_or(1).clamp(1, 4);
+    let n = n.unwrap_or(1).clamp(1, 4);
+    let body = image_job_body(
+        prompt,
+        negative_prompt,
+        width,
+        height,
+        seed.unwrap_or(-1),
+        n,
+        steps,
+        cfg_scale,
+        init_image,
+        strength,
+    );
 
     let _sd = gw.sd.lock().await;
     let port = gw.ensure(Slot::Image).await?;
-    let body = json!({
-        "prompt": req.prompt,
-        "negative_prompt": req.negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": req.seed.unwrap_or(-1),
-        "batch_count": n,
-        "sample_params": {
-            "sample_steps": steps,
-            "guidance": {"txt_cfg": cfg_scale, "img_cfg": cfg_scale, "distilled_guidance": 3.5}
-        },
-        "output_format": "png"
-    });
     let result = gw.sd_job(Slot::Image, port, "/sdcpp/v1/img_gen", body).await?;
     let mut data = Vec::new();
     for img in result.get("images").and_then(Value::as_array).into_iter().flatten() {
@@ -567,9 +768,9 @@ async fn images(State(gw): State<Shared>, Json(req): Json<ImageReq>) -> Result<J
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| upstream(format!("bad image data: {e}")))?;
-        let rel = gw.save_output("images", &slug(&req.prompt), "png", &bytes)?;
+        let rel = gw.save_output("images", &slug(prompt), "png", &bytes)?;
         let mut item = json!({"url": format!("/files/{rel}"), "path": format!("outputs/{rel}")});
-        if req.response_format.as_deref() != Some("url") {
+        if response_format != Some("url") {
             item["b64_json"] = Value::String(b64.to_string());
         }
         data.push(item);
@@ -578,6 +779,50 @@ async fn images(State(gw): State<Shared>, Json(req): Json<ImageReq>) -> Result<J
         return Err(ApiError::new(StatusCode::BAD_GATEWAY, "the engine returned no images"));
     }
     Ok(Json(json!({"created": now_secs(), "data": data})))
+}
+
+async fn images(State(gw): State<Shared>, Json(req): Json<ImageReq>) -> Result<Json<Value>, ApiError> {
+    if req.prompt.trim().is_empty() {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "prompt must not be empty"));
+    }
+    let size = parse_image_size(req.size.as_deref())?;
+    run_image_job(
+        &gw,
+        &req.prompt,
+        &req.negative_prompt,
+        size,
+        req.steps,
+        req.seed,
+        req.n,
+        req.response_format.as_deref(),
+        None,
+        None,
+    )
+    .await
+}
+
+async fn images_edits(State(gw): State<Shared>, Json(req): Json<ImageEditReq>) -> Result<Json<Value>, ApiError> {
+    if req.prompt.trim().is_empty() {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "prompt must not be empty"));
+    }
+    if req.image.trim().is_empty() {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "image is required for edits"));
+    }
+    let init = encode_image_input(&gw.root, &req.image)?;
+    let size = parse_image_size(req.size.as_deref())?;
+    run_image_job(
+        &gw,
+        &req.prompt,
+        &req.negative_prompt,
+        size,
+        req.steps,
+        req.seed,
+        req.n,
+        req.response_format.as_deref(),
+        Some(&init),
+        req.strength,
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -590,6 +835,9 @@ struct VideoReq {
     fps: Option<u64>,
     steps: Option<u64>,
     seed: Option<i64>,
+    /// Optional conditioning image (data URL, base64, or path) for image-to-video.
+    image: Option<String>,
+    strength: Option<f64>,
     response_format: Option<String>,
 }
 
@@ -625,6 +873,7 @@ fn align_dim(n: u64, multiple: u64) -> u64 {
 }
 
 /// Build the `/sdcpp/v1/vid_gen` JSON body from request + config + catalog defaults.
+/// When `init_image` is set: MiniMax uses `ref_images`; other models use `init_image` + `strength`.
 #[allow(clippy::too_many_arguments)] // request + config + catalog knobs stay explicit
 pub fn video_job_body(
     prompt: &str,
@@ -640,6 +889,8 @@ pub fn video_job_body(
     cfg_fps: u32,
     cfg_steps: u32,
     defaults: &Value,
+    init_image: Option<&str>,
+    strength: Option<f64>,
 ) -> Value {
     let multiple = defaults
         .get("size_multiple")
@@ -668,7 +919,7 @@ pub fn video_job_body(
         .get("distilled_guidance")
         .and_then(Value::as_f64)
         .unwrap_or(3.5);
-    json!({
+    let mut body = json!({
         "prompt": prompt,
         "negative_prompt": negative_prompt,
         "width": width,
@@ -687,7 +938,17 @@ pub fn video_job_body(
             }
         },
         "output_format": "webm"
-    })
+    });
+    if let Some(img) = init_image {
+        let minimax = defaults.get("frame_align").and_then(Value::as_str) == Some("minimax_h3");
+        if minimax {
+            body["ref_images"] = json!([img]);
+        } else {
+            body["init_image"] = json!(img);
+            body["strength"] = json!(clamp_strength(strength));
+        }
+    }
+    body
 }
 
 async fn videos(State(gw): State<Shared>, Json(req): Json<VideoReq>) -> Result<Json<Value>, ApiError> {
@@ -706,6 +967,10 @@ async fn videos(State(gw): State<Shared>, Json(req): Json<VideoReq>) -> Result<J
         })?),
         None => None,
     };
+    let init = match req.image.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(img) => Some(encode_image_input(&gw.root, img)?),
+        None => None,
+    };
     let body = video_job_body(
         &req.prompt,
         &req.negative_prompt,
@@ -720,6 +985,8 @@ async fn videos(State(gw): State<Shared>, Json(req): Json<VideoReq>) -> Result<J
         c.fps,
         c.steps,
         d,
+        init.as_deref(),
+        req.strength,
     );
     let frames = body.get("video_frames").and_then(Value::as_u64).unwrap_or(33);
     let fps = body.get("fps").and_then(Value::as_u64).unwrap_or(16);
@@ -1067,14 +1334,54 @@ async fn proxy_upstream_path(State(gw): State<Shared>, req: Request, upstream_pa
 }
 
 async fn openai_chat_upstream(State(gw): State<Shared>, req: Request) -> Response {
+    if gw.chat_uses_ollama() && *req.method() == Method::POST {
+        return openai_chat_ollama(State(gw), req).await;
+    }
     proxy_upstream_path(State(gw), req, "/v1/chat/completions").await
 }
 
+/// Buffer the JSON body so we can force Ollama's imported model name (`yourai-chat`).
+async fn openai_chat_ollama(State(gw): State<Shared>, req: Request) -> Response {
+    let Some(port) = gw.running_port(Slot::Chat) else {
+        return ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "the chat model is still loading").into_response();
+    };
+    let bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024 * 1024).await {
+        Ok(b) => b,
+        Err(e) => return ApiError::new(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let mut body: Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => return ApiError::new(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    body["model"] = json!(ollama::chat_model_id());
+    let r = match gw
+        .http
+        .post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => return upstream(e).into_response(),
+    };
+    let mut resp = Response::builder().status(r.status());
+    for (k, v) in r.headers() {
+        if !HOP_BY_HOP.contains(&k.as_str()) {
+            resp = resp.header(k, v);
+        }
+    }
+    resp.body(Body::from_stream(r.bytes_stream()))
+        .unwrap_or_else(|e| internal(e).into_response())
+}
+
 /// When a project UI exists, serve it for browser GETs; otherwise (and for API paths)
-/// forward to llama-server. Media `/v1/images|videos|audio…` stay on dedicated routes.
+/// forward to llama-server. Media mounts come from `api/routes.toml` or defaults.
 async fn fallback(State(gw): State<Shared>, req: Request) -> Response {
     let path = req.uri().path().to_string();
     let method = req.method().clone();
+    if gw.chat_uses_ollama() && method == Method::POST && path.starts_with("/v1/chat/completions") {
+        return openai_chat_ollama(State(gw), req).await;
+    }
     if let Some(dir) = gw.ui_dir.as_ref() {
         if !should_proxy_to_llama(&gw, &path) && (method == Method::GET || method == Method::HEAD) {
             return serve_project_ui(dir, &path).await;
@@ -1130,16 +1437,21 @@ async fn proxy(State(gw): State<Shared>, req: Request) -> Response {
         .unwrap_or_else(|e| internal(e).into_response())
 }
 
-fn router(gw: Shared) -> Router {
-    let mut r = Router::new()
-        .route("/v1/images/generations", post(images))
+fn mount_default_media(r: Router<Shared>) -> Router<Shared> {
+    r.route("/v1/images/generations", post(images))
+        .route("/v1/images/edits", post(images_edits))
         .route("/v1/videos/generations", post(videos))
         .route("/v1/audio/transcriptions", post(transcriptions))
         .route("/v1/audio/speech", post(speech))
+}
+
+fn router(gw: Shared) -> Router {
+    let mut r = Router::new()
         .route("/files/{*path}", get(files))
         .route("/yourai/status", get(status));
 
     if let Some(table) = gw.route_table.clone() {
+        let mut mounted_media = false;
         for (i, entry) in table.route.iter().enumerate() {
             let method = entry.method_norm();
             let path = entry.path.clone();
@@ -1149,6 +1461,26 @@ fn router(gw: Shared) -> Router {
                     ("GET", "openai_chat_ws") => r.route(&path, get(super::api::chat_ws)),
                     ("POST", "claude_messages") => r.route(&path, post(super::api::claude_messages)),
                     ("POST", "gemini_generate") => r.route(&path, post(super::api::gemini_generate)),
+                    ("POST", "images_generations") => {
+                        mounted_media = true;
+                        r.route(&path, post(images))
+                    }
+                    ("POST", "images_edits") => {
+                        mounted_media = true;
+                        r.route(&path, post(images_edits))
+                    }
+                    ("POST", "videos_generations") => {
+                        mounted_media = true;
+                        r.route(&path, post(videos))
+                    }
+                    ("POST", "audio_transcriptions") => {
+                        mounted_media = true;
+                        r.route(&path, post(transcriptions))
+                    }
+                    ("POST", "audio_speech") => {
+                        mounted_media = true;
+                        r.route(&path, post(speech))
+                    }
                     _ => {
                         log(format!(
                             "warning: skipping route {method} {path} (unsupported method/upstream)"
@@ -1178,7 +1510,13 @@ fn router(gw: Shared) -> Router {
                 };
             }
         }
+        // Old routes.toml files (pre-media) keep working.
+        if !mounted_media && !table.has_media_upstream() {
+            log("api/routes.toml has no media upstreams; mounting default /v1/images|videos|audio routes");
+            r = mount_default_media(r);
+        }
     } else {
+        r = mount_default_media(r);
         if gw.cfg.server.has_api_style("openai") {
             r = r.route("/v1/chat/ws", get(super::api::chat_ws));
         }
@@ -1205,7 +1543,12 @@ async fn custom_handler_at(State(gw): State<Shared>, idx: usize, req: Request) -
     let Some(handler) = entry.handler.as_ref() else {
         return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
     };
-    super::api::handler::invoke(&gw.root, handler, entry.default_timeout_ms(), req).await
+    let opts = super::api::handler::InvokeOpts {
+        timeout_ms: entry.default_timeout_ms(),
+        stream: entry.stream,
+        content_type: entry.stream_content_type().to_string(),
+    };
+    super::api::handler::invoke(&gw.root, handler, opts, req).await
 }
 
 async fn stop_all(gw: &Gw) {
@@ -1431,6 +1774,8 @@ mod tests {
                 "sample_method": "euler",
                 "distilled_guidance": 3.5
             }),
+            None,
+            None,
         );
         assert_eq!(wan["width"], 480);
         assert_eq!(wan["height"], 272);
@@ -1439,6 +1784,28 @@ mod tests {
         assert_eq!(wan["sample_params"]["flow_shift"], 3.0);
         assert_eq!(wan["sample_params"]["guidance"]["txt_cfg"], 6.0);
         assert_eq!(wan["sample_params"]["sample_method"], "euler");
+        assert!(wan.get("init_image").is_none());
+
+        let wan_i2v = video_job_body(
+            "waves",
+            "",
+            -1,
+            None,
+            None,
+            None,
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &json!({"frame_align": "wan", "width": 480, "height": 272, "steps": 20, "cfg_scale": 6.0, "flow_shift": 3.0, "frames": 33, "fps": 16, "sample_method": "euler"}),
+            Some("data:image/png;base64,aaa"),
+            Some(0.5),
+        );
+        assert_eq!(wan_i2v["init_image"], "data:image/png;base64,aaa");
+        assert_eq!(wan_i2v["strength"], 0.5);
+        assert!(wan_i2v.get("ref_images").is_none());
 
         let h3 = video_job_body(
             "fox",
@@ -1466,6 +1833,8 @@ mod tests {
                 "distilled_guidance": 3.5,
                 "size_multiple": 32
             }),
+            Some("data:image/png;base64,bbb"),
+            Some(0.9),
         );
         assert_eq!(h3["width"], 864);
         assert_eq!(h3["height"], 480);
@@ -1474,6 +1843,21 @@ mod tests {
         assert_eq!(h3["sample_params"]["flow_shift"], 12.0);
         assert_eq!(h3["sample_params"]["guidance"]["txt_cfg"], 1.0);
         assert_eq!(h3["seed"], 7);
+        assert_eq!(h3["ref_images"], json!(["data:image/png;base64,bbb"]));
+        assert!(h3.get("init_image").is_none());
+        assert!(h3.get("strength").is_none());
+
+        let edit = image_job_body("cat", "", 512, 512, -1, 1, 20, 7.0, Some("data:image/png;base64,x"), Some(2.0));
+        assert_eq!(edit["init_image"], "data:image/png;base64,x");
+        assert_eq!(edit["strength"], 1.0);
+        assert_eq!(clamp_strength(None), 0.75);
+        assert_eq!(clamp_strength(Some(0.01)), 0.05);
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("in.png"), b"fakepng").unwrap();
+        let enc = encode_image_input(tmp.path(), "in.png").unwrap();
+        assert!(enc.starts_with("data:image/png;base64,"));
+        assert!(encode_image_input(tmp.path(), "").is_err());
     }
 
     #[tokio::test]

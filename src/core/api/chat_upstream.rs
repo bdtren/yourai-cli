@@ -5,6 +5,15 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 
 use crate::core::gateway::{ApiError, Gw, Slot};
+use crate::core::ollama;
+
+fn upstream_model(gw: &Gw) -> String {
+    if gw.cfg.runtime.engine == "ollama" {
+        ollama::chat_model_id().to_string()
+    } else {
+        gw.cfg.name.clone()
+    }
+}
 
 /// POST `/v1/chat/completions` on the chat engine. Returns status + full body bytes.
 pub async fn chat_completions(gw: &Gw, mut body: Value) -> Result<(StatusCode, Vec<u8>), ApiError> {
@@ -14,7 +23,7 @@ pub async fn chat_completions(gw: &Gw, mut body: Value) -> Result<(StatusCode, V
             "the chat model is still loading",
         ));
     };
-    body["model"] = json!(gw.cfg.name);
+    body["model"] = json!(upstream_model(gw));
     let r = gw
         .http
         .post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
@@ -41,7 +50,7 @@ pub async fn chat_completions_raw_stream(
             "the chat model is still loading",
         ));
     };
-    body["model"] = json!(gw.cfg.name);
+    body["model"] = json!(upstream_model(gw));
     body["stream"] = json!(true);
     let r = gw
         .http

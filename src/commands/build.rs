@@ -6,6 +6,7 @@ use crate::core::engine::{self, EngineSpec};
 use crate::core::hardware::{self, Hardware};
 use crate::core::lock::{self, EngineLock, Lock, ModelLock};
 use crate::core::models::{self, Resolved};
+use crate::core::ollama;
 use crate::core::project::Project;
 use crate::core::store::{self, Opts, Store};
 use crate::core::{paths, secrets};
@@ -209,30 +210,54 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
         models::accept_license(r, accept_license)?;
     }
 
+    let use_ollama = cfg.runtime.engine == "ollama";
+    let need_llama = !use_ollama
+        || caps.iter().any(|(c, _)| matches!(c, Capability::TextToSpeech));
+
     ui::heading("Engines");
-    let (engine_key, exe) = engine::ensure(&store, &hw, &catalog)?;
     let mut lock = Lock {
-        sections: lock::section_hashes(cfg, &p.system_prompt(cfg)),
-        engine_version: catalog.llama().version.clone(),
-        engine_key: engine_key.clone(),
-        engine_exe: store.rel(&exe)?,
+        sections: lock::section_hashes(cfg, &p.system_prompt(cfg), &p.root),
         model_id: chat.id.clone(),
         model_quant: cfg.model.quant.clone(),
         ..Default::default()
     };
+
+    let (engine_key, llama_exe) = if need_llama {
+        let (key, exe) = engine::ensure(&store, &hw, &catalog)?;
+        lock.engine_version = catalog.llama().version.clone();
+        lock.engine_key = key.clone();
+        if !use_ollama {
+            lock.engine_exe = store.rel(&exe)?;
+        }
+        (key, Some(exe))
+    } else {
+        (String::new(), None)
+    };
+
+    if use_ollama {
+        let ollama_bin = ollama::find_binary()?;
+        lock.engine_version = "ollama".into();
+        lock.engine_key = "ollama".into();
+        lock.engine_exe = ollama_bin.display().to_string();
+    }
+
     for (c, _) in &caps {
         match c {
             Capability::Image | Capability::Video => install_engine(&store, &hw, &catalog, &engine::SD, &mut lock)?,
             Capability::SpeechToText => install_engine(&store, &hw, &catalog, &engine::WHISPER, &mut lock)?,
             Capability::TextToSpeech => {
-                let tts = engine::sibling(&exe, "llama-tts").ok_or_else(|| {
+                let exe = llama_exe.as_ref().ok_or_else(|| {
+                    CliError::new(Exit::Unsupported, "text_to_speech needs the llama.cpp engine")
+                        .hint("run `yourai rebuild`, or turn off text_to_speech in yourai.toml")
+                })?;
+                let tts = engine::sibling(exe, "llama-tts").ok_or_else(|| {
                     CliError::new(Exit::Unsupported, "this llama.cpp build has no llama-tts")
                         .hint("run `yourai update`, or turn off text_to_speech in yourai.toml")
                 })?;
                 lock.engines.insert(
                     "llama-tts".into(),
                     EngineLock {
-                        version: lock.engine_version.clone(),
+                        version: catalog.llama().version.clone(),
                         key: engine_key.clone(),
                         exe: store.rel(&tts)?,
                     },
@@ -246,6 +271,15 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
     lock.model_path = store.rel(&chat.path)?;
     if let Some(f) = chat.extra("mmproj") {
         lock.mmproj_path = store.rel(&f.path)?;
+    }
+    if use_ollama {
+        let _ = ollama::find_binary()?;
+        let ollama_models = if store.project_modules {
+            ollama::ollama_models_dir(&store.module_dir())
+        } else {
+            ollama::ollama_models_dir(&paths::home())
+        };
+        ollama::prepare_store(&ollama_models, &chat.path, cfg.runtime.context_length)?;
     }
     for (c, r) in &caps {
         let sha = models::ensure(&store, r)?;
@@ -271,6 +305,10 @@ pub fn prepare(p: &Project, cfg: &Config, accept_license: bool, opts: Opts) -> a
         );
     }
     lock::save(&p.lock_path(), &lock)?;
+    if cfg.rag.enabled {
+        ui::heading("Document index");
+        crate::core::rag::ensure_index(p, &cfg.rag)?;
+    }
     Ok(lock)
 }
 

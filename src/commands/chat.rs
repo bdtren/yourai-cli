@@ -103,6 +103,7 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
     let tools = agent::definitions(&cfg);
     let agent = Agent {
         cfg: &cfg,
+        root: &p.root,
         sandbox: Sandbox::new(&p.root, &cfg.agent.workspace)?,
         gateway: &gateway,
         max_chars: (cfg.runtime.context_length as usize * 2).max(2000),
@@ -203,6 +204,17 @@ pub fn run(p: &Project) -> anyhow::Result<()> {
             json!({"role": "user", "content": parts})
         };
         let before = messages.len();
+        if cfg.rag.enabled {
+            let budget = (cfg.runtime.context_length as usize * 2).max(2000).min(6000);
+            match crate::core::rag::retrieve(p, &cfg.rag, input) {
+                Ok(hits) => {
+                    if let Some(block) = crate::core::rag::context_block(&hits, budget) {
+                        messages.push(json!({"role": "system", "content": block}));
+                    }
+                }
+                Err(e) => ui::warn(format!("document search skipped: {e}")),
+            }
+        }
         messages.push(user);
 
         let mut body = json!({

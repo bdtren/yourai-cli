@@ -185,6 +185,11 @@ pub fn definitions(cfg: &Config) -> Vec<Value> {
                 "Read a text, code, Markdown, or PDF file from the workspace.",
                 string_params(&[("path", "File path relative to the workspace")], &["path"]),
             ),
+            "search_docs" => function(
+                "search_docs",
+                "Search project documents in data/docs (or rag.docs_dir) and return matching excerpts.",
+                string_params(&[("query", "What to look for in the documents")], &["query"]),
+            ),
             "write_file" => function(
                 "write_file",
                 "Create or overwrite a text file in the workspace. The user is asked to confirm.",
@@ -198,19 +203,28 @@ pub fn definitions(cfg: &Config) -> Vec<Value> {
             ),
             "generate_image" => function(
                 "generate_image",
-                "Create an image from a text description. Returns the saved file path.",
+                "Create an image from a text description, or edit an existing workspace image (img2img). Returns the saved file path.",
                 string_params(
                     &[
                         ("prompt", "What the image shows, in detail"),
                         ("size", "Optional WIDTHxHEIGHT, like 512x512"),
+                        ("image", "Optional workspace image path to edit (img2img)"),
+                        ("strength", "Optional edit strength 0.05-1 when image is set (default 0.75)"),
                     ],
                     &["prompt"],
                 ),
             ),
             "generate_video" => function(
                 "generate_video",
-                "Create a short video clip from a text description. Takes minutes. Returns the saved file path.",
-                string_params(&[("prompt", "What happens in the video")], &["prompt"]),
+                "Create a short video clip from a text description, optionally conditioned on a workspace image. Takes minutes. Returns the saved file path.",
+                string_params(
+                    &[
+                        ("prompt", "What happens in the video"),
+                        ("image", "Optional workspace image path for image-to-video"),
+                        ("strength", "Optional strength 0.05-1 when image is set (Wan-style models)"),
+                    ],
+                    &["prompt"],
+                ),
             ),
             "speak" => function(
                 "speak",
@@ -229,6 +243,7 @@ pub fn definitions(cfg: &Config) -> Vec<Value> {
 
 pub struct Agent<'a> {
     pub cfg: &'a Config,
+    pub root: &'a Path,
     pub sandbox: Sandbox,
     pub gateway: &'a Gateway,
     pub max_chars: usize,
@@ -270,22 +285,44 @@ impl Agent<'_> {
                 self.sandbox.list(if p.is_empty() { "." } else { p })
             }
             "read_file" => self.sandbox.read(arg(&args, "path"), self.max_chars),
+            "search_docs" => self.search_docs(arg(&args, "query")),
             "write_file" => self.write(arg(&args, "path"), arg(&args, "content")),
-            "generate_image" => {
+            "generate_image" => (|| {
                 let mut body = json!({"prompt": arg(&args, "prompt")});
                 if !arg(&args, "size").is_empty() {
                     body["size"] = json!(arg(&args, "size"));
                 }
-                self.media("Creating the image…", || {
-                    self.gateway.image(body).map(|f| f.join(", "))
+                let edit = !arg(&args, "image").is_empty();
+                if edit {
+                    let p = self.sandbox.resolve(arg(&args, "image"))?;
+                    let data = self.gateway.encode_file(&p).map_err(|e| e.to_string())?;
+                    body["image"] = json!(data);
+                    if let Ok(s) = arg(&args, "strength").parse::<f64>() {
+                        body["strength"] = json!(s);
+                    }
+                }
+                self.media(if edit { "Editing the image…" } else { "Creating the image…" }, || {
+                    if edit {
+                        self.gateway.image_edit(body).map(|f| f.join(", "))
+                    } else {
+                        self.gateway.image(body).map(|f| f.join(", "))
+                    }
                 })
-            }
-            "generate_video" => {
-                let body = json!({"prompt": arg(&args, "prompt")});
+            })(),
+            "generate_video" => (|| {
+                let mut body = json!({"prompt": arg(&args, "prompt")});
+                if !arg(&args, "image").is_empty() {
+                    let p = self.sandbox.resolve(arg(&args, "image"))?;
+                    let data = self.gateway.encode_file(&p).map_err(|e| e.to_string())?;
+                    body["image"] = json!(data);
+                    if let Ok(s) = arg(&args, "strength").parse::<f64>() {
+                        body["strength"] = json!(s);
+                    }
+                }
                 self.media("Creating the video (this takes minutes)…", || {
                     self.gateway.video(body).map(|f| f.join(", "))
                 })
-            }
+            })(),
             "speak" => self.media("Speaking…", || self.gateway.speak(arg(&args, "text"), None)),
             "transcribe" => match self.sandbox.resolve(arg(&args, "path")) {
                 Ok(p) => self.media("Transcribing…", || self.gateway.transcribe(&p, None)),
@@ -314,6 +351,21 @@ impl Agent<'_> {
         let r = f();
         pb.finish_and_clear();
         r.map_err(|e| e.to_string())
+    }
+
+    fn search_docs(&self, query: &str) -> Result<String, String> {
+        if query.trim().is_empty() {
+            return Err("query is empty".into());
+        }
+        let p = crate::core::project::Project {
+            root: self.root.to_path_buf(),
+        };
+        let hits = crate::core::rag::retrieve(&p, &self.cfg.rag, query).map_err(|e| e.to_string())?;
+        if hits.is_empty() {
+            return Ok("no matching documents".into());
+        }
+        let budget = self.max_chars.min(6000);
+        Ok(crate::core::rag::context_block(&hits, budget).unwrap_or_else(|| "no matching documents".into()))
     }
 
     fn write(&self, rel: &str, content: &str) -> Result<String, String> {
@@ -431,5 +483,11 @@ mod tests {
             .map(|d| d["function"]["name"].as_str().unwrap().to_string())
             .collect();
         assert_eq!(names, vec!["list_files", "read_file"]);
+        cfg.rag.enabled = true;
+        let names: Vec<String> = definitions(&cfg)
+            .iter()
+            .map(|d| d["function"]["name"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(names, vec!["list_files", "read_file", "search_docs"]);
     }
 }

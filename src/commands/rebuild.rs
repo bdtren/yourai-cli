@@ -7,7 +7,7 @@ use crate::ui;
 pub fn run(p: &Project, accept_license: bool, opts: Opts) -> anyhow::Result<()> {
     p.upgrade_config()?;
     let cfg = p.config()?;
-    let current = lock::section_hashes(&cfg, &p.system_prompt(&cfg));
+    let current = lock::section_hashes(&cfg, &p.system_prompt(&cfg), &p.root);
     let state = lifecycle::live_state(p);
     let was_running = state.state == "running";
 
@@ -27,6 +27,10 @@ pub fn run(p: &Project, accept_license: bool, opts: Opts) -> anyhow::Result<()> 
     } else if let Some(mut l) = p.lock() {
         l.sections = current;
         lock::save(&p.lock_path(), &l)?;
+    }
+    if cfg.rag.enabled {
+        ui::heading("Document index");
+        crate::core::rag::ensure_index(p, &cfg.rag)?;
     }
 
     if was_running {

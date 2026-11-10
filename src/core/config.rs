@@ -10,10 +10,11 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub const API_STYLES: [&str; 3] = ["openai", "claude", "gemini"];
 
 /// Tools the chat agent can use. Media tools also need their capability enabled.
-pub const AGENT_TOOLS: [&str; 7] = [
+pub const AGENT_TOOLS: [&str; 8] = [
     "list_files",
     "read_file",
     "write_file",
+    "search_docs",
     "generate_image",
     "generate_video",
     "speak",
@@ -43,6 +44,32 @@ pub struct Config {
     pub speech_to_text: SttCfg,
     #[serde(default)]
     pub text_to_speech: TtsCfg,
+    #[serde(default)]
+    pub rag: RagCfg,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct RagCfg {
+    /// Index `docs_dir` and inject matching snippets into `yourai chat`.
+    pub enabled: bool,
+    /// Project-relative folder of documents to index.
+    pub docs_dir: String,
+    /// How many chunks to inject per turn.
+    pub top_k: u32,
+    /// Approximate characters per chunk.
+    pub chunk_chars: u32,
+}
+
+impl Default for RagCfg {
+    fn default() -> Self {
+        RagCfg {
+            enabled: false,
+            docs_dir: "data/docs".into(),
+            top_k: 4,
+            chunk_chars: 1200,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -55,9 +82,16 @@ pub struct ModelCfg {
     pub repo: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,
+    /// Hugging Face revision / branch / commit for custom models (default `main`).
+    #[serde(default = "main_revision")]
+    pub revision: String,
     /// Image/audio projector: "auto" (from the catalog), "" (none), or a file in `repo`.
     #[serde(default = "auto")]
     pub mmproj: String,
+}
+
+fn main_revision() -> String {
+    "main".into()
 }
 
 fn auto() -> String {
@@ -362,6 +396,7 @@ impl Config {
             .filter(|t| self.agent.tools.is_empty() || self.agent.tools.iter().any(|x| x == t))
             .filter(|t| match *t {
                 "write_file" => self.agent.allow_write,
+                "search_docs" => self.rag.enabled,
                 "generate_image" => self.image.enabled,
                 "generate_video" => self.video.enabled,
                 "speak" => self.text_to_speech.enabled,
@@ -421,9 +456,9 @@ impl Config {
         if !["chat", "code"].contains(&self.goal.as_str()) {
             return Err(invalid("goal must be \"chat\" or \"code\""));
         }
-        if self.runtime.engine != "llamacpp" {
+        if !["llamacpp", "ollama"].contains(&self.runtime.engine.as_str()) {
             return Err(invalid(format!(
-                "runtime.engine \"{}\" is not supported yet; use \"llamacpp\"",
+                "runtime.engine \"{}\" is not supported; use \"llamacpp\" or \"ollama\"",
                 self.runtime.engine
             )));
         }
@@ -466,6 +501,15 @@ impl Config {
         if self.model.id == "custom" && (self.model.repo.is_empty() || !self.model.file.ends_with(".gguf")) {
             return Err(invalid(
                 "a custom model needs model.repo and a model.file ending in .gguf",
+            ));
+        }
+        if self.model.revision.trim().is_empty()
+            || self.model.revision.contains("..")
+            || self.model.revision.contains('/')
+            || self.model.revision.contains('\\')
+        {
+            return Err(invalid(
+                "model.revision must be a non-empty Hugging Face revision (branch, tag, or commit)",
             ));
         }
         if self.model.mmproj != "auto" && !self.model.mmproj.is_empty() && !self.model.mmproj.ends_with(".gguf") {
@@ -514,6 +558,14 @@ impl Config {
             super::paths::inside(Path::new("."), &self.text_to_speech.speaker_file)
                 .map_err(|e| invalid(format!("text_to_speech.speaker_file: {e}")))?;
         }
+        super::paths::inside(Path::new("."), &self.rag.docs_dir)
+            .map_err(|e| invalid(format!("rag.docs_dir: {e}")))?;
+        if self.rag.top_k == 0 || self.rag.top_k > 32 {
+            return Err(invalid("rag.top_k must be between 1 and 32"));
+        }
+        if !(200..=20_000).contains(&self.rag.chunk_chars) {
+            return Err(invalid("rag.chunk_chars must be between 200 and 20000"));
+        }
         if !self.server.ui_dir.is_empty() {
             super::paths::inside(Path::new("."), &self.server.ui_dir)
                 .map_err(|e| invalid(format!("server.ui_dir: {e}")))?;
@@ -548,14 +600,17 @@ impl Config {
 /// Writes a fresh, commented yourai.toml.
 pub fn render(cfg: &Config) -> String {
     let custom = if cfg.model.id == "custom" {
-        format!("repo = \"{}\"\nfile = \"{}\"\n", cfg.model.repo, cfg.model.file)
+        format!(
+            "repo = \"{}\"\nfile = \"{}\"\nrevision = \"{}\"\n",
+            cfg.model.repo, cfg.model.file, cfg.model.revision
+        )
     } else {
         String::new()
     };
     format!(
         r#"# YourAI project configuration. Edit freely, then run `yourai rebuild`.
 # Reference: run `yourai config --help`. Secrets never go in this file
-# (API keys live in .yourai/secrets.toml or the YOURAI_API_KEY variable).
+# (API keys live in .yourai/secrets.toml or the YOURAI_API_KEY / HF_TOKEN variables).
 
 schema_version = {schema}
 name = "{name}"
@@ -573,7 +628,8 @@ quant = "{quant}"
 mmproj = {mmproj}
 {custom}
 [runtime]
-engine = "llamacpp"
+# "llamacpp" (built-in) or "ollama" (uses the ollama binary; models stay under yourai_modules)
+engine = "{engine}"
 # "auto" lets the engine put as much as fits on the GPU; "all", or a number of layers.
 gpu_layers = "{gpu_layers}"
 # How many tokens of text the AI can keep in mind at once. More uses more memory.
@@ -616,6 +672,7 @@ project_modules = {project_modules}
         quant = cfg.model.quant,
         mmproj = q(&cfg.model.mmproj),
         custom = custom,
+        engine = cfg.runtime.engine,
         gpu_layers = cfg.runtime.gpu_layers,
         ctx = cfg.runtime.context_length,
         threads = cfg.runtime.threads,
@@ -659,8 +716,15 @@ workspace = {a_ws}
 # Allow the agent to create or change files (it always asks first).
 allow_write = {a_write}
 # Empty = all tools whose capability is enabled. Choose from:
-# list_files, read_file, write_file, generate_image, generate_video, speak, transcribe
+# list_files, read_file, write_file, search_docs, generate_image, generate_video, speak, transcribe
 tools = [{tools}]
+
+[rag]
+# Index data/docs and inject matching snippets into `yourai chat` (and search_docs when the agent is on).
+enabled = {r_on}
+docs_dir = {r_docs}
+top_k = {r_top}
+chunk_chars = {r_chunk}
 
 [image]
 # Create images from text with `yourai image` or at /v1/images/generations.
@@ -727,6 +791,10 @@ speaker_file = {t_spk}
         t_quant = q(&cfg.text_to_speech.quant),
         t_lang = q(&cfg.text_to_speech.language),
         t_spk = q(&cfg.text_to_speech.speaker_file),
+        r_on = cfg.rag.enabled,
+        r_docs = q(&cfg.rag.docs_dir),
+        r_top = cfg.rag.top_k,
+        r_chunk = cfg.rag.chunk_chars,
     )
 }
 
@@ -751,6 +819,7 @@ pub fn change_impact(key: &str) -> &'static str {
         }
         "store" => "Store location change: run `yourai rebuild` (may download or copy files).",
         "agent" => "Used the next time you run `yourai chat`.",
+        "rag" => "Document index: run `yourai rag index` (or `yourai rebuild`).",
         "generation" | "server" | "system_prompt" | "name" | "goal" => {
             "Restart needed: run `yourai rebuild` (fast, nothing is downloaded)."
         }
@@ -770,6 +839,7 @@ pub fn sample() -> Config {
             quant: "Q4_K_M".into(),
             repo: String::new(),
             file: String::new(),
+            revision: "main".into(),
             mmproj: "auto".into(),
         },
         runtime: RuntimeCfg {
@@ -797,6 +867,7 @@ pub fn sample() -> Config {
         agent: AgentCfg::default(),
         image: ImageCfg::default(),
         video: VideoCfg::default(),
+        rag: RagCfg::default(),
         speech_to_text: SttCfg::default(),
         text_to_speech: TtsCfg::default(),
     }
@@ -870,6 +941,12 @@ mod tests {
         let mut cfg = sample();
         cfg.system_prompt = "../secret".into();
         assert!(cfg.validate().is_err());
+        let mut cfg = sample();
+        cfg.runtime.engine = "vllm".into();
+        assert!(cfg.validate().is_err());
+        let mut cfg = sample();
+        cfg.runtime.engine = "ollama".into();
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]

@@ -8,6 +8,17 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System};
 
 /// Starts `exe` in the background, detached from the terminal, logging to `log`.
 pub fn spawn_detached(exe: &Path, args: &[String], log: &Path, cwd: &Path) -> anyhow::Result<u32> {
+    spawn_detached_env(exe, args, log, cwd, &[])
+}
+
+/// Like [`spawn_detached`], with extra environment variables.
+pub fn spawn_detached_env(
+    exe: &Path,
+    args: &[String],
+    log: &Path,
+    cwd: &Path,
+    env: &[(String, String)],
+) -> anyhow::Result<u32> {
     std::fs::create_dir_all(log.parent().unwrap())?;
     let out = File::options().create(true).append(true).open(log)?;
     let mut cmd = Command::new(exe);
@@ -16,6 +27,9 @@ pub fn spawn_detached(exe: &Path, args: &[String], log: &Path, cwd: &Path) -> an
         .stdin(Stdio::null())
         .stdout(out.try_clone()?)
         .stderr(out);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
     if let Some(dir) = exe.parent() {
         cmd.env(super::engine::lib_env_var(), dir);
     }

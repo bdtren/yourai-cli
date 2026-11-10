@@ -7,6 +7,7 @@ pub mod doctor;
 pub mod init;
 pub mod lifecycle;
 pub mod media;
+pub mod rag;
 pub mod rebuild;
 pub mod self_update;
 pub mod uninstall;
@@ -50,7 +51,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             steps,
             seed,
             negative,
-        } => media::image(&project()?, &prompt, size, n, steps, seed, negative),
+            image,
+            strength,
+        } => media::image(&project()?, &prompt, size, n, steps, seed, negative, image, strength),
         Command::Video {
             prompt,
             size,
@@ -58,9 +61,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             fps,
             steps,
             seed,
-        } => media::video(&project()?, &prompt, size, frames, fps, steps, seed),
+            image,
+            strength,
+        } => media::video(&project()?, &prompt, size, frames, fps, steps, seed, image, strength),
         Command::Speak { text, language, out } => media::speak(&project()?, &text, language, out),
         Command::Transcribe { file, language, out } => media::transcribe(&project()?, &file, language, out),
+        Command::Rag(cmd) => match cmd {
+            crate::cli::RagCmd::Index => rag::index(&project()?),
+            crate::cli::RagCmd::Status => rag::status(&project()?),
+        },
         Command::Gateway => crate::core::gateway::run(&project()?),
     }
 }

@@ -268,6 +268,7 @@ fn install_spec(store: &Store, spec: &EngineSpec, entry: &EngineEntry, key: &str
             sha256: Some(&a.sha256),
             size_bytes: (a.size_mb * 1e6) as u64,
             label: &format!("engine {}", a.file),
+            auth_token: None,
         })?;
         unpack(&dest, &staging)?;
     }

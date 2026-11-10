@@ -124,7 +124,12 @@ pub fn resolve(cfg: &Config, catalog: &Catalog, models_root: &std::path::Path) -
             anyhow::bail!("model.repo / model.file contain unsafe characters");
         }
         let dir = models_root.join("custom").join(&safe_repo);
-        let hf = |f: &str| format!("https://huggingface.co/{}/resolve/main/{f}", cfg.model.repo);
+        let rev = if cfg.model.revision.is_empty() {
+            "main"
+        } else {
+            cfg.model.revision.as_str()
+        };
+        let hf = |f: &str| format!("https://huggingface.co/{}/resolve/{rev}/{f}", cfg.model.repo);
         let mut extras = Vec::new();
         let mm = cfg.model.mmproj.as_str();
         if !mm.is_empty() && mm != "auto" {
@@ -254,6 +259,7 @@ fn download_one(
     sha: Option<&str>,
     size_gb: f64,
     label: &str,
+    auth_token: Option<&str>,
 ) -> anyhow::Result<String> {
     downloader::download(&downloader::Request {
         url,
@@ -261,6 +267,7 @@ fn download_one(
         sha256: sha,
         size_bytes: (size_gb * 1e9) as u64,
         label,
+        auth_token,
     })
 }
 
@@ -270,6 +277,8 @@ pub fn ensure(store: &Store, r: &Resolved) -> anyhow::Result<String> {
     if r.sha256.is_none() {
         ui::warn("custom model: there is no published checksum, so the file's hash is recorded on first download");
     }
+    let token = super::secrets::hf_token(&store.root);
+    let token_ref = token.as_deref();
     let cache = store.cache_for_model(&r.path);
     let sha = super::store::ensure_file(store, &r.path, cache.as_deref(), |dest| {
         download_one(
@@ -278,6 +287,7 @@ pub fn ensure(store: &Store, r: &Resolved) -> anyhow::Result<String> {
             r.sha256.as_deref(),
             r.size_gb,
             &format!("model {}", r.name),
+            token_ref,
         )
     })?;
     for f in &r.extras {
@@ -289,6 +299,7 @@ pub fn ensure(store: &Store, r: &Resolved) -> anyhow::Result<String> {
                 f.sha256.as_deref(),
                 f.size_gb,
                 &format!("{} {}", f.role, file_name(&f.path.display().to_string())),
+                token_ref,
             )
         })?;
     }
@@ -299,6 +310,26 @@ pub fn ensure(store: &Store, r: &Resolved) -> anyhow::Result<String> {
 mod tests {
     use super::*;
     use crate::core::config::sample;
+
+    #[test]
+    fn custom_model_uses_revision_in_url() {
+        let c = Catalog::bundled();
+        let mut cfg = sample();
+        cfg.model.id = "custom".into();
+        cfg.model.quant = "custom".into();
+        cfg.model.repo = "owner/name".into();
+        cfg.model.file = "model.Q4_K_M.gguf".into();
+        cfg.model.revision = "abc123".into();
+        cfg.model.mmproj = String::new();
+        let root = tempfile::tempdir().unwrap();
+        let models = root.path().join("models");
+        let r = resolve(&cfg, &c, &models).unwrap();
+        assert!(r.url.contains("/resolve/abc123/model.Q4_K_M.gguf"));
+        assert!(r.extras.is_empty());
+        cfg.model.mmproj = "mmproj.gguf".into();
+        let r = resolve(&cfg, &c, &models).unwrap();
+        assert_eq!(r.extra("mmproj").unwrap().url.contains("/resolve/abc123/mmproj.gguf"), true);
+    }
 
     #[test]
     fn chat_model_gets_its_projector() {
