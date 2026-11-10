@@ -279,12 +279,14 @@ cargo clippy --all-targets -- -D warnings
 ## TODO
 
 Checklist of product features. Checked items ship in this version (`0.0.9`).
+Unchecked items are the next work queue (rough priority top → bottom within each section).
 
 ### Core flow
 - [x] `doctor` — CPU, RAM, GPU, disk, ports, model fit, optional `--network` / `--fix`
 - [x] Guided `init` wizard with Recommended choices and reasons
 - [x] Non-interactive `init --yes` (and flag overrides) for scripts and CI
-- [x] Project scaffold (`yourai.toml`, prompts, scripts, `.yourai/`)
+- [x] Init questions for editable web UI and API styles (`--customize-web-ui`, `--api-styles`)
+- [x] Project scaffold (`yourai.toml`, `web/`, `api/routes.toml`, prompts, scripts, `.yourai/`)
 - [x] `build` — download engine + model with SHA-256 checks and license prompt
 - [x] `start` / `stop` / `status` / `logs`
 - [x] `pause` / `resume` (unload model to free memory)
@@ -302,6 +304,8 @@ Checklist of product features. Checked items ship in this version (`0.0.9`).
 - [x] `uninstall` (asks separately about models and engines)
 - [x] Shell completions (bash, zsh, fish, powershell, elvish)
 - [x] Clear exit codes and `--debug` / `NO_COLOR`
+- [ ] Streaming / SSE custom handlers (today custom `handler` routes are buffered JSON only)
+- [ ] Move media mounts (`/v1/images|videos|audio…`) into `api/routes.toml`
 
 ### Hardware and models
 - [x] Hardware report with source and confidence
@@ -310,29 +314,33 @@ Checklist of product features. Checked items ship in this version (`0.0.9`).
 - [x] Project-local `yourai_modules/` + `yourai.lock`, optional `~/.yourai` cache with `-s`/`-f`
 - [x] Resumable downloads
 - [x] llama.cpp runtime (Metal, CUDA, Vulkan, CPU builds)
+- [ ] Custom / gated Hugging Face models end-to-end in the wizard
 - [ ] Ollama as a managed runtime
 - [ ] vLLM as a managed runtime
-- [ ] Custom / gated Hugging Face models end-to-end in the wizard
 
 ### Agent and multimodal
 - [x] Capabilities multi-select in the wizard, with a model question and recommendation for each
 - [x] Agent tools in `chat`: list, read (text, code, PDF), and write files in a sandboxed workspace
 - [x] Vision and omni chat models (`/image`, `/audio` attachments; `image_url` / `input_audio` in the API)
 - [x] Image generation (`yourai image`, `/v1/images/generations`) with stable-diffusion.cpp
-- [x] Video generation (`yourai video`, `/v1/videos/generations`) with Wan2.1
+- [x] Video generation (`yourai video`, `/v1/videos/generations`) with Wan2.1 and MiniMax-H3 FL2VA (video + stereo audio)
 - [x] Speech to text (`yourai transcribe`, `/v1/audio/transcriptions`) with whisper.cpp
 - [x] Text to speech (`yourai speak`, `/v1/audio/speech`) with Qwen3-TTS
 - [x] One port for everything: gateway with on-demand engines and idle unload
 - [x] Config schema 2 with automatic migration of older `yourai.toml` files
+- [ ] Document search / RAG (`data/docs/`, index, retrieve into prompts)
+- [ ] Agent tools that run commands or browse the web
 - [ ] Image editing and image-to-video
 - [ ] Voice cloning from a sample in the wizard
-- [ ] Agent tools that run commands or browse the web
 
-### Privacy and network
+### Privacy, security, and network
 - [x] Default bind to `127.0.0.1`
 - [x] LAN mode with generated API key (secrets file, not `yourai.toml`)
 - [x] `deploy` — remote VPS (SSH) or expose this PC over an IP; optional tunnel/DNS checklist
 - [x] Daily CLI update check with `YOURAI_NO_UPDATE_CHECK` opt-out
+- [x] Security docs (`SECURITY.md`, threat model, permissions, audit practice)
+- [x] CI supply-chain checks (`cargo audit`, `cargo deny`, Dependabot config)
+- [x] Turn on macOS code signing and notarization by default in release
 - [ ] Auto-start on login
 
 ### Distribution
@@ -341,14 +349,13 @@ Checklist of product features. Checked items ship in this version (`0.0.9`).
 - [x] Website channel at `https://yourai.bdtren.com/cli/`
 - [x] Homebrew formula (`brew install bdtren/yourai/yourai`)
 - [x] npm packages (`@yourai/cli` + platform packages)
-- [ ] macOS code signing and notarization (pipeline ready; not on by default yet)
+- [x] Community docs: contributing guide and code of conduct
 - [ ] Submit formula/cask to the official Homebrew catalogues
+- [ ] Desktop wrapper app
 
 ### Later modules
-- [ ] Document search / RAG (`data/docs/`, index, retrieve into prompts)
 - [ ] Fine-tuning tools (managed train env → GGUF)
 - [ ] Plugins / hooks (RAG injection in the gateway)
-- [ ] Desktop wrapper app
 - [ ] Community-contributed model catalog
 
 ## Contributing
