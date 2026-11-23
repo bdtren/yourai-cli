@@ -41,7 +41,7 @@ jobs:
           case "$f" in *.zip) unzip -q "$f" -d "$d" ;; *) tar -xzf "$f" -C "$d" ;; esac
           exe="$(ls "$d"/${{ matrix.engine }}* | head -1)"
           "$exe" --help > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: engine-${{ matrix.engine }}-${{ matrix.key }}
           path: dist-engines/*
